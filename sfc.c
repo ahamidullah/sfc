@@ -59,13 +59,13 @@ ctoi(int c)
 int
 getnum(void)
 {
-	char str[MAX_NUM_SZ];
 	int num = 0;
-	while ((c = getchar()) != '\n' && c != EOF) {
-		if(!isdigit(c))
-			expected("Integer");
-		num += ctoi(c);
-	}
+	char str[MAX_NUM_DIGITS], *str_end;
+
+	fgets(str, sizeof(str), stdin);
+	num = strtol(str, &str_end, 0);
+	if (*str_end != '\n')
+		expected("Integer");
 	debug_print("%d", num);
 	return num;
 }
