@@ -4,6 +4,16 @@
 
 #define MAX_NUM_DIGITS 32
 
+char look;
+
+void
+nexttok(void)
+{
+	while ((look = getchar()) == ' ' || look == '\t')
+	  ;
+	return;
+}
+
 #define debug_print(...)\
 {\
 	fprintf(stderr, __VA_ARGS__);\
@@ -41,15 +51,6 @@ expected(const char *lhs)
 	emit("\n");\
 }
 
-void
-flushin(void)
-{
-	int c;
-	while ((c = getchar()) != '\n' && c != EOF)
-		;
-	return;
-}
-
 int
 ctoi(int c)
 {
@@ -57,32 +58,61 @@ ctoi(int c)
 }
 
 int
-getnum(void)
+num(void)
 {
 	int num = 0;
-	char str[MAX_NUM_DIGITS], *str_end;
 
-	fgets(str, sizeof(str), stdin);
-	num = strtol(str, &str_end, 0);
-	if (*str_end != '\n')
+	if (scanf("%d", &num) != 1)
 		expected("Integer");
 	debug_print("%d", num);
+	nexttok();
 	return num;
 }
 
 void
-getexpr(void)
+term(void)
 {
-	int num = getnum();
-	emitln("MOV %d %%EAX", num);
+	int n = num();
+	emitln("MOV %d %%EAX", n);
 	return;
+}
+
+void
+add(void)
+{
+	term();
+	emitln("ADD %%EBX %%EAX");
+	return;
+}
+
+void
+sub(void)
+{
+	term();
+	emitln("SUB %%EBX %%EAX");
+	return;
+}
+
+void
+expr(void)
+{
+	term();
+	emitln("MOV %%EAX %%EBX");
+	while (look == '+' || look == '-') {
+		if (look == '+')
+			add();
+		else if (look == '-')
+			sub();
+		else
+			expected("Plus or minus");
+	}
 }
 
 int
 main(int argc, char **argv)
 {
 	while (1) {
-		getexpr();
+		expr();
 	}
 	return 0;
 }
