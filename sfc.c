@@ -8,6 +8,7 @@ enum token { num_tk, add_tk, sub_tk, eof_tk, _err_tk };
 enum token look;
 char *lookstr;
 int max_lookstr_sz;
+FILE *file;
 
 int
 isdelim(char c)
@@ -32,23 +33,27 @@ lookstr_append(char c)
 enum token
 nexttok(void)
 {
-	char c = getc(stdin);
+	char c;
 	enum token ret = _err_tk;
 
+	while (isspace(c = getc(file)))
+		;
+	lookstr[0] = '\0';
 	lookstr_append(c);
 	if (c == '+')
 		return add_tk;
 	if (c == '-')
 		return sub_tk;
-	if (c == EOF)
+	if (c == EOF) {
 		return eof_tk;
+	}
 	if (isdigit(c)) {
 		ret = num_tk;
-		while (!isdelim((c = getc(stdin)))) {
+		while (!isdelim((c = getc(file)))) {
 			lookstr_append(c);
 			if (!isdigit(c)) ret = _err_tk;
 		}
-		ungetc(c, stdin);
+		ungetc(c, file);
 	}
 	return ret;
 }
@@ -90,66 +95,77 @@ expected(const char *lhs)
 	emit("\n");\
 }
 
-int
-ctoi(int c)
+void
+expect(enum token expected_look)
 {
-	return c - '0';
+	if (look == expected_look)
+		return;
+	switch(expected_look) {
+		case num_tk:
+			expected("integer");
+			break;
+		default:
+			expected("default");
+	}
+}
+
+int
+accept(enum token tk)
+{
+	if (look == tk)
+		return 1;
+	return 0;
 }
 
 void
 constnum(void)
 {
-	int n = 1;
-	emitln("MOV %d %%EAX", n);
+	if (!accept(num_tk))
+		expected("number");
+	emitln("MOV %s %%EAX", lookstr);
+	look = nexttok();
 	return;
 }
 
-void
-add(void)
-{
-	term();
-	emitln("ADD %%EBX %%EAX");
-	return;
-}
-
-void
-sub(void)
-{
-	term();
-	emitln("SUB %%EBX %%EAX");
-	return;
-}
+void expr_prime(void);
 
 void
 expr(void)
 {
 	constnum();
-	emitln("MOV %%EAX %%EBX");
-	while (look == '+' || look == '-') {
-		if (look == '+')
-			add();
-		else if (look == '-')
-			sub();
-		else
-			expected("Plus or minus");
+	expr_prime();
+	/*expect(eof_tk);*/
+	return;
+}
+
+void
+expr_prime(void)
+{
+	if (accept(add_tk) || accept(sub_tk)) {
+		look = nexttok();
+		expr();
+	} else if (accept(eof_tk)) {
+		printf("it\n");
+	} else {
+		expected("plus or minus sign");
 	}
+	return;
 }
 
 int
 main(int argc, char **argv)
 {
 	/* 
-	expr ->  const expr_prime
-	expr_prime -> + expr expr_prime
-		|        - expr expr_prime
+	expr ->  constnum expr_prime
+	expr_prime -> + expr
+		|        - expr
 		|       eps
 	*/
+	file = fopen(argv[1], "r");
 	lookstr = malloc(1);
 	lookstr[0] = '\0';
 	max_lookstr_sz = 1;
 	look = nexttok();
-	while (1) {
-		expr();
-	}
+	expr();
 	return 0;
 }
