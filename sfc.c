@@ -4,7 +4,17 @@
 #include <string.h>
 #include "ast.h"
 
-typedef enum { num_tk, add_tk, sub_tk, eof_tk, _err_tk } token_type;
+typedef enum { num_tk,
+               name_tk,
+               add_tk,
+               sub_tk,
+               mult_tk,
+               div_tk,
+               eof_tk,
+               _err_tk,
+               oparen_tk,
+               cparen_tk,
+             } token_type;
 
 token_type lookahead_type;
 char *lookahead;
@@ -15,7 +25,14 @@ ast_node *ast;
 int
 isdelim(char c)
 {
-	if (c == '+' || c == '-' || c == EOF || isspace(c))
+	if (c == '+'
+	 || c == '-'
+	 || c == '*'
+	 || c == '/'
+	 || c == '('
+	 || c == ')'
+	 || c == EOF
+	 || isspace(c))
 		return 1;
 	return 0;
 }
@@ -32,32 +49,59 @@ lookahead_append(char c)
 	lookahead[new_len] = '\0';
 }
 
-token_type
+void
+eat_to_delim(int (*validc_func)(int))
+{
+	char c;
+	while (!isdelim((c = getc(file)))) {
+		lookahead_append(c);
+		if (!(*validc_func)(c)) lookahead_type = _err_tk;
+	}
+	ungetc(c, file);
+	return;
+}
+
+void
 nexttok(void)
 {
 	char c;
-	token_type ret = _err_tk;
 
+	lookahead_type = _err_tk;
 	while (isspace(c = getc(file)))
 		;
 	lookahead[0] = '\0';
 	lookahead_append(c);
-	if (c == '+')
-		return add_tk;
-	if (c == '-')
-		return sub_tk;
-	if (c == EOF) {
-		return eof_tk;
+	switch (c) {
+		case '+':
+			lookahead_type = add_tk;
+			return;
+		case '-':
+			lookahead_type = sub_tk;
+			return;
+		case '*':
+			lookahead_type = mult_tk;
+			return;
+		case '/':
+			lookahead_type = div_tk;
+			return;
+		case EOF:
+			lookahead_type =  eof_tk;
+			return;
+		case ')':
+			lookahead_type = cparen_tk;
+			return;
+		case '(':
+			lookahead_type = oparen_tk;
+			return;
 	}
 	if (isdigit(c)) {
-		ret = num_tk;
-		while (!isdelim((c = getc(file)))) {
-			lookahead_append(c);
-			if (!isdigit(c)) ret = _err_tk;
-		}
-		ungetc(c, file);
+		lookahead_type = num_tk;
+		eat_to_delim(&isdigit);
+	} else if (isalpha(c)) {
+		lookahead_type = name_tk;
+		eat_to_delim(&isalpha);
 	}
-	return ret;
+	return;
 }
 
 #define debug_print(...)\
@@ -96,7 +140,7 @@ expected(const char *lhs)
 	emit(__VA_ARGS__);\
 	emit("\n");\
 }
-
+/*
 void
 expect(token_type expected_type)
 {
@@ -122,68 +166,128 @@ accept(token_type tk)
 	}
 	return 0;
 }
+*/
+
+ast_node *eprime(ast_node *);
 
 ast_node *
-create_node(ast_type type)
+num(void)
 {
 	ast_node *n = malloc(sizeof(ast_node));
-	n->type = type;
+	n->type = type_num;
+	n->ts_data.num = atoi(lookahead);
+	nexttok();
 	return n;
 }
 
 ast_node *
-constnum(void)
+name(void)
 {
-	char *last_look = malloc(strlen(lookahead)+1);
-	last_look = strcpy(last_look, lookahead);
-	if (!accept(num_tk))
-		expected("number");
-	ast_node *n = create_node(type_constnum);
-	n->ts_data.constnum = atoi(last_look);
-	printf("%s\n", last_look);
+	ast_node *n = malloc(sizeof(ast_node));
+	n->type = type_name;
+	n->ts_data.name = malloc(strlen(lookahead)+1);
+	strcpy(n->ts_data.name, lookahead);
+	nexttok();
 	return n;
 }
 
-ast_node *expr_prime(ast_node *);
+ast_node * expr(void);
 
 ast_node *
-expr(void)
+factor(void)
 {
-	ast_node *cnum = constnum();
-	ast_node *n = expr_prime(cnum);
-	expect(eof_tk);
-	return n;
-}
-
-int
-eps_check(token_type tk)
-{
-	if (lookahead_type == tk)
-		return 1;
-	return 0;
+	if (lookahead_type == oparen_tk) {
+		ast_node *n;
+		nexttok();
+		if (!(n = expr()))
+			return NULL;
+		if (lookahead_type != cparen_tk)
+			return NULL;
+		nexttok();
+		return n;
+	} else if (lookahead_type == num_tk)
+		return num();
+	else if (lookahead_type == name_tk)
+		return name();
+	return NULL;
 }
 
 ast_node *
-expr_prime(ast_node *constant_num)
+tprime(ast_node *prev_factorn)
 {
-	ast_node *n;
+	ast_node *n, *tprimen, *factorn;
 
-	if (eps_check(eof_tk)) {
-		return constant_num;
+	if (lookahead_type == eof_tk || lookahead_type == add_tk || lookahead_type == sub_tk || lookahead_type == cparen_tk) {
+		return prev_factorn;
 	}
 
 	n = malloc(sizeof(ast_node));
 
-	if (accept(add_tk))
+	if (lookahead_type == mult_tk) {
+		n->ts_data.expr.op = ast_mult;
+		nexttok();
+	} else if (lookahead_type == div_tk) {
+		n->ts_data.expr.op = ast_div;
+		nexttok();
+	} else {
+		expected("multiplication or division sign");
+	}
+	if (!(factorn = factor()))
+		return NULL;
+	if (!(tprimen = tprime(factorn)))
+		return NULL;	
+	n->type = type_expr;
+	n->ts_data.expr.left = prev_factorn;
+	n->ts_data.expr.right = tprimen;
+	return n;
+}
+
+ast_node *
+term(void)
+{
+	ast_node *fnode;
+	if ((fnode = factor()))
+		return tprime(fnode);
+	return NULL;
+}
+
+ast_node *
+expr(void)
+{
+	ast_node *termn;
+	if ((termn = term()))
+		return eprime(termn);
+	return NULL;
+}
+
+/* combine eprime and tprime? */
+ast_node *
+eprime(ast_node *prev_termn)
+{
+	ast_node *n, *eprimen, *termn;
+
+	if (lookahead_type == eof_tk || lookahead_type == cparen_tk) {
+		return prev_termn;
+	}
+
+	n = malloc(sizeof(ast_node));
+
+	if (lookahead_type == add_tk) {
 		n->ts_data.expr.op = ast_add;
-	else if (accept(sub_tk))
+		nexttok();
+	} else if (lookahead_type == sub_tk) {
 		n->ts_data.expr.op = ast_sub;
-	else {
+		nexttok();
+	} else {
 		expected("plus or minus sign");
 	}
+	if (!(termn = term()))
+		return NULL;
+	if (!(eprimen = eprime(termn)))
+		return NULL;	
 	n->type = type_expr;
-	n->ts_data.expr.left = constant_num;
-	n->ts_data.expr.right = expr();
+	n->ts_data.expr.left = prev_termn;
+	n->ts_data.expr.right = eprimen;
 	return n;
 }
 
@@ -198,13 +302,20 @@ print_ast(ast_node *n)
 				printf("+\n");
 			else if (n->ts_data.expr.op == ast_sub)
 				printf("-\n");
+			else if (n->ts_data.expr.op == ast_div)
+				printf("/\n");
+			else if (n->ts_data.expr.op == ast_mult)
+				printf("*\n");			
 			else
 				printf("?\n");
 			printf("Expression right child:\n");
 			print_ast(n->ts_data.expr.right);
 			break;
-		case type_constnum:
-			printf("%d\n", n->ts_data.constnum);
+		case type_num:
+			printf("%d\n", n->ts_data.num);
+			break;
+		case type_name:
+			printf("%s\n", n->ts_data.name);
 			break;
 		default:
 			break;
@@ -216,16 +327,23 @@ int
 main(int argc, char **argv)
 {
 	/*
-	expr ->  constnum expr_prime
-	expr_prime -> + expr
-		|     - expr
-		|     eps
+	expr       -> term eprime
+	eprime     -> | + term eprime
+	              | - term eprime
+	              | eps
+	term       -> factor tprime
+	tprime     -> * factor tprime
+	              | / factor tprime
+	              | eps
+	factor     -> ( expr )
+	              | num
+	              | name
 	*/
 	file = fopen(argv[1], "r");
 	lookahead = malloc(1);
 	lookahead[0] = '\0';
 	max_lookahead_sz = 1;
-	lookahead_type = nexttok();
+	nexttok();
 	ast = expr();
 	print_ast(ast);
 	return 0;

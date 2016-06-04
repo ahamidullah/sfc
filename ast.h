@@ -2,28 +2,29 @@ struct ast_node;
 
 typedef enum ast_type {
 	type_expr,
-	type_constnum,
+	type_name,
+	type_num,
 } ast_type;
 
-typedef enum ast_expr_op {
+typedef enum ast_terminal {
 	ast_add,
 	ast_sub,
-} ast_expr_op;
+	ast_mult,
+	ast_div,
+	ast_paren_open,
+	ast_paren_close,
+} ast_terminal;
 
 typedef struct ast_expr {
 	struct ast_node *left;
-	ast_expr_op op;
+	ast_terminal op;
 	struct ast_node *right;
 } ast_expr;
 
-typedef struct eprime_return {
-	ast_expr_op op;
-	struct ast_node *right;
-} eprime_return;
-	
 typedef union ast_data {
 	ast_expr expr;
-	int constnum;
+	char *name;
+	int num;
 } ast_data;
 
 typedef struct ast_node {
