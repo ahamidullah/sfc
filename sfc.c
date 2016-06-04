@@ -43,7 +43,7 @@ lookahead_append(char c)
 	int new_len = strlen(lookahead)+1;
 	if (new_len >= max_lookahead_sz) {
 		max_lookahead_sz *= 2;
-		lookahead = malloc(max_lookahead_sz);
+		lookahead = realloc(lookahead, max_lookahead_sz);
 	}
 	lookahead[new_len-1] = c;
 	lookahead[new_len] = '\0';
@@ -184,6 +184,7 @@ ast_node *
 name(void)
 {
 	ast_node *n = malloc(sizeof(ast_node));
+	printf("%s\n", lookahead);
 	n->type = type_name;
 	n->ts_data.name = malloc(strlen(lookahead)+1);
 	strcpy(n->ts_data.name, lookahead);
