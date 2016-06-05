@@ -14,6 +14,7 @@ typedef enum { num_tk,
                _err_tk,
                oparen_tk,
                cparen_tk,
+               asg_tk,
              } token_type;
 
 token_type lookahead_type;
@@ -32,7 +33,8 @@ isdelim(char c)
 	 || c == '('
 	 || c == ')'
 	 || c == EOF
-	 || isspace(c))
+	 || isspace(c)
+	 || c == ':')
 		return 1;
 	return 0;
 }
@@ -50,7 +52,7 @@ lookahead_append(char c)
 }
 
 void
-eat_to_delim(int (*validc_func)(int))
+accept_to_delim(int (*validc_func)(int))
 {
 	char c;
 	while (!isdelim((c = getc(file)))) {
@@ -93,13 +95,19 @@ nexttok(void)
 		case '(':
 			lookahead_type = oparen_tk;
 			return;
+		case ':':
+			c = getc(file);
+			lookahead_append(c);
+			if (c == '=')
+				lookahead_type = asg_tk;
+			return;
 	}
 	if (isdigit(c)) {
 		lookahead_type = num_tk;
-		eat_to_delim(&isdigit);
+		accept_to_delim(&isdigit);
 	} else if (isalpha(c)) {
 		lookahead_type = name_tk;
-		eat_to_delim(&isalpha);
+		accept_to_delim(&isalpha);
 	}
 	return;
 }
@@ -173,6 +181,8 @@ ast_node *eprime(ast_node *);
 ast_node *
 num(void)
 {
+	if (lookahead_type != num_tk)
+		expected("number");
 	ast_node *n = malloc(sizeof(ast_node));
 	n->type = type_num;
 	n->ts_data.num = atoi(lookahead);
@@ -183,8 +193,9 @@ num(void)
 ast_node *
 name(void)
 {
+	if (lookahead_type != name_tk)
+		expected("variable name");
 	ast_node *n = malloc(sizeof(ast_node));
-	printf("%s\n", lookahead);
 	n->type = type_name;
 	n->ts_data.name = malloc(strlen(lookahead)+1);
 	strcpy(n->ts_data.name, lookahead);
@@ -292,31 +303,76 @@ eprime(ast_node *prev_termn)
 	return n;
 }
 
+ast_node *
+create_node(ast_type t)
+{
+	ast_node *n = malloc(sizeof(ast_node));
+	n->type = t;
+	return n;
+}
+
+ast_node *
+astmt(void)
+{
+	ast_node *n = create_node(type_astmt), *namen, *exprn;
+
+	if (!(namen = name()))
+		return NULL;
+	n->ts_data.astmt.lval = namen;
+	if (lookahead_type != asg_tk)
+		expected("':='");
+	nexttok();
+	if (!(exprn = expr()))
+		return NULL;
+	n->ts_data.astmt.rval = exprn;
+	return n;
+}
+
+#define ast_printf(tab_depth, ...)\
+{\
+	{\
+	int i;\
+	for (i = 0; i < tab_depth; i++)\
+		printf("\t");\
+	printf(__VA_ARGS__);\
+	}\
+}
+
 void
-print_ast(ast_node *n)
+print_ast(ast_node *n, int depth)
 {
 	switch(n->type) {
 		case type_expr:
-			printf("Expression left child:\n");
-			print_ast(n->ts_data.expr.left);
-			if (n->ts_data.expr.op == ast_add)
-				printf("+\n");
-			else if (n->ts_data.expr.op == ast_sub)
-				printf("-\n");
-			else if (n->ts_data.expr.op == ast_div)
-				printf("/\n");
-			else if (n->ts_data.expr.op == ast_mult)
-				printf("*\n");			
-			else
-				printf("?\n");
-			printf("Expression right child:\n");
-			print_ast(n->ts_data.expr.right);
+			depth++;
+			ast_printf(depth, "Expression left child:\n");
+
+			print_ast(n->ts_data.expr.left, depth);
+			if (n->ts_data.expr.op == ast_add) {
+				ast_printf(depth, "+\n");
+			} else if (n->ts_data.expr.op == ast_sub) {
+				ast_printf(depth, "-\n");
+			} else if (n->ts_data.expr.op == ast_div) {
+				ast_printf(depth, "/\n");
+			} else if (n->ts_data.expr.op == ast_mult) {
+				ast_printf(depth, "*\n");			
+			} else {
+				ast_printf(depth, "?\n");
+			}
+			ast_printf(depth, "Expression right child:\n");
+
+			print_ast(n->ts_data.expr.right, depth);
 			break;
 		case type_num:
-			printf("%d\n", n->ts_data.num);
+			ast_printf(depth, "%d\n", n->ts_data.num);
 			break;
 		case type_name:
-			printf("%s\n", n->ts_data.name);
+			ast_printf(depth, "%s\n", n->ts_data.name);
+			break;
+		case type_astmt:
+			ast_printf(depth, "var name:\n");
+			print_ast(n->ts_data.astmt.lval, depth);
+			ast_printf(depth, "expr:\n");
+			print_ast(n->ts_data.astmt.rval, depth);
 			break;
 		default:
 			break;
@@ -328,6 +384,7 @@ int
 main(int argc, char **argv)
 {
 	/*
+	astmt      -> var := expr
 	expr       -> term eprime
 	eprime     -> | + term eprime
 	              | - term eprime
@@ -345,7 +402,7 @@ main(int argc, char **argv)
 	lookahead[0] = '\0';
 	max_lookahead_sz = 1;
 	nexttok();
-	ast = expr();
-	print_ast(ast);
+	ast = astmt();
+	print_ast(ast, -1);
 	return 0;
 }
