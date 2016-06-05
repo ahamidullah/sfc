@@ -15,6 +15,7 @@ typedef enum { num_tk,
                oparen_tk,
                cparen_tk,
                asg_tk,
+               semi_tk,
              } token_type;
 
 token_type lookahead_type;
@@ -22,6 +23,9 @@ char *lookahead;
 int max_lookahead_sz;
 FILE *file;
 ast_node *ast;
+
+/*bad. temp....*/
+#define END_STMT_LIST -1
 
 int
 isdelim(char c)
@@ -34,7 +38,8 @@ isdelim(char c)
 	 || c == ')'
 	 || c == EOF
 	 || isspace(c)
-	 || c == ':')
+	 || c == ':'
+	 || c == ';')
 		return 1;
 	return 0;
 }
@@ -100,6 +105,9 @@ nexttok(void)
 			lookahead_append(c);
 			if (c == '=')
 				lookahead_type = asg_tk;
+			return;
+		case ';':
+			lookahead_type = semi_tk;
 			return;
 	}
 	if (isdigit(c)) {
@@ -229,7 +237,7 @@ tprime(ast_node *prev_factorn)
 {
 	ast_node *n, *tprimen, *factorn;
 
-	if (lookahead_type == eof_tk || lookahead_type == add_tk || lookahead_type == sub_tk || lookahead_type == cparen_tk) {
+	if (lookahead_type == semi_tk || lookahead_type == add_tk || lookahead_type == sub_tk || lookahead_type == cparen_tk) {
 		return prev_factorn;
 	}
 
@@ -278,7 +286,7 @@ eprime(ast_node *prev_termn)
 {
 	ast_node *n, *eprimen, *termn;
 
-	if (lookahead_type == eof_tk || lookahead_type == cparen_tk) {
+	if (lookahead_type == semi_tk || lookahead_type == cparen_tk) {
 		return prev_termn;
 	}
 
@@ -328,6 +336,24 @@ astmt(void)
 	return n;
 }
 
+ast_node *
+stmtlist(void)
+{
+	ast_node *astmtn, *stmtlistn;
+
+	if (lookahead_type == eof_tk)
+		return END_STMT_LIST;
+	if (!(astmtn = astmt()))
+		return NULL;
+	if (lookahead_type != semi_tk)
+		expected("semicolon");
+	nexttok();
+	if(!(stmtlistn = stmtlist()))
+		return NULL;
+	astmtn->ts_data.astmt.next = stmtlistn;
+	return astmtn;	
+}
+
 #define ast_printf(tab_depth, ...)\
 {\
 	{\
@@ -369,10 +395,12 @@ print_ast(ast_node *n, int depth)
 			ast_printf(depth, "%s\n", n->ts_data.name);
 			break;
 		case type_astmt:
-			ast_printf(depth, "var name:\n");
-			print_ast(n->ts_data.astmt.lval, depth);
-			ast_printf(depth, "expr:\n");
-			print_ast(n->ts_data.astmt.rval, depth);
+			for (; n != -1; n = n->ts_data.astmt.next) {
+				ast_printf(depth, "var name:\n");
+				print_ast(n->ts_data.astmt.lval, depth);
+				ast_printf(depth, "expr:\n");
+				print_ast(n->ts_data.astmt.rval, depth);
+			}
 			break;
 		default:
 			break;
@@ -384,9 +412,11 @@ int
 main(int argc, char **argv)
 {
 	/*
+	stmtlist   -> astmt; stmtlist
+	              | eps
 	astmt      -> var := expr
 	expr       -> term eprime
-	eprime     -> | + term eprime
+	eprime     -> + term eprime
 	              | - term eprime
 	              | eps
 	term       -> factor tprime
@@ -402,7 +432,7 @@ main(int argc, char **argv)
 	lookahead[0] = '\0';
 	max_lookahead_sz = 1;
 	nexttok();
-	ast = astmt();
+	ast = stmtlist();
 	print_ast(ast, -1);
 	return 0;
 }

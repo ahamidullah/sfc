@@ -25,6 +25,7 @@ typedef struct ast_expr {
 typedef struct ast_astmt {
 	struct ast_node *lval;
 	struct ast_node *rval;
+	struct ast_node *next;
 } ast_astmt;
 
 typedef union ast_data {
