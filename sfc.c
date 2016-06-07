@@ -16,6 +16,8 @@ typedef enum { num_tk,
                cparen_tk,
                asg_tk,
                semi_tk,
+               obrace_tk,
+               cbrace_tk,
              } token_type;
 
 token_type lookahead_type;
@@ -39,7 +41,9 @@ isdelim(char c)
 	 || c == EOF
 	 || isspace(c)
 	 || c == ':'
-	 || c == ';')
+	 || c == ';'
+	 || c == '{'
+	 || c == '}')
 		return 1;
 	return 0;
 }
@@ -109,6 +113,12 @@ nexttok(void)
 		case ';':
 			lookahead_type = semi_tk;
 			return;
+		case '{':
+			lookahead_type = obrace_tk;
+			return;
+		case '}':
+			lookahead_type = cbrace_tk;
+			return;
 	}
 	if (isdigit(c)) {
 		lookahead_type = num_tk;
@@ -156,31 +166,53 @@ expected(const char *lhs)
 	emit(__VA_ARGS__);\
 	emit("\n");\
 }
-/*
+
 void
 expect(token_type expected_type)
 {
-	if (lookahead_type == expected_type)
+	if (lookahead_type == expected_type) {
+		nexttok();
 		return;
+	}
 	switch(expected_type) {
 		case num_tk:
 			expected("integer");
 			break;
 		case eof_tk:
 			expected("end of file");
+		case name_tk:
+			expected("variable name");
+		case add_tk:
+			expected("plus sign");
+		case sub_tk:
+			expected("minus sign");
+		case mult_tk:
+			expected("multiplication sign");
+		case div_tk:
+			expected("division sign");
+		case oparen_tk:
+			expected("open parenthesis");
+		case cparen_tk:
+			expected("closing parenthesis");
+		case asg_tk:
+			expected("assignment operator");
+		case semi_tk:
+			expected("semicolon");
+		case obrace_tk:
+			expected("opening brace");
+		case cbrace_tk:
+			expected("closing brace");
 		default:
 			expected("default");
 	}
 }
 
-int
+/*
+void
 accept(token_type tk)
 {
-	if (lookahead_type == tk) {
-		lookahead_type = nexttok();
-		return 1;
-	}
-	return 0;
+	nexttok();
+	return;
 }
 */
 
@@ -189,25 +221,21 @@ ast_node *eprime(ast_node *);
 ast_node *
 num(void)
 {
-	if (lookahead_type != num_tk)
-		expected("number");
 	ast_node *n = malloc(sizeof(ast_node));
 	n->type = type_num;
 	n->ts_data.num = atoi(lookahead);
-	nexttok();
+	expect(num_tk);
 	return n;
 }
 
 ast_node *
 name(void)
 {
-	if (lookahead_type != name_tk)
-		expected("variable name");
 	ast_node *n = malloc(sizeof(ast_node));
 	n->type = type_name;
 	n->ts_data.name = malloc(strlen(lookahead)+1);
 	strcpy(n->ts_data.name, lookahead);
-	nexttok();
+	expect(name_tk);
 	return n;
 }
 
@@ -221,9 +249,7 @@ factor(void)
 		nexttok();
 		if (!(n = expr()))
 			return NULL;
-		if (lookahead_type != cparen_tk)
-			return NULL;
-		nexttok();
+		expect(cparen_tk);
 		return n;
 	} else if (lookahead_type == num_tk)
 		return num();
@@ -244,11 +270,11 @@ tprime(ast_node *prev_factorn)
 	n = malloc(sizeof(ast_node));
 
 	if (lookahead_type == mult_tk) {
+		nexttok();
 		n->ts_data.expr.op = ast_mult;
-		nexttok();
 	} else if (lookahead_type == div_tk) {
-		n->ts_data.expr.op = ast_div;
 		nexttok();
+		n->ts_data.expr.op = ast_div;
 	} else {
 		expected("multiplication or division sign");
 	}
@@ -293,11 +319,11 @@ eprime(ast_node *prev_termn)
 	n = malloc(sizeof(ast_node));
 
 	if (lookahead_type == add_tk) {
+		nexttok();
 		n->ts_data.expr.op = ast_add;
-		nexttok();
 	} else if (lookahead_type == sub_tk) {
-		n->ts_data.expr.op = ast_sub;
 		nexttok();
+		n->ts_data.expr.op = ast_sub;
 	} else {
 		expected("plus or minus sign");
 	}
@@ -327,15 +353,30 @@ astmt(void)
 	if (!(namen = name()))
 		return NULL;
 	n->ts_data.astmt.lval = namen;
-	if (lookahead_type != asg_tk)
-		expected("':='");
-	nexttok();
+	expect(asg_tk);
 	if (!(exprn = expr()))
 		return NULL;
 	n->ts_data.astmt.rval = exprn;
 	return n;
 }
-
+/*
+ast_node *
+ifstmt(void)
+{
+	ast_node *n = create_node(type_ifstmt), *condexprn, *stmtlistn;
+	expect(if_tk);
+	expect(oparen_tk);
+	if (!(condn = condexpr()))
+		return NULL;
+	n->condexpr = condn;
+	expect(cparen_tk);
+	expect(obrace_tk);
+	if (!(stmtlistn = stmtlist()))
+		return NULL;
+	expect(cbrace_tk);
+	return n;
+}
+*/
 ast_node *
 stmtlist(void)
 {
@@ -345,9 +386,7 @@ stmtlist(void)
 		return END_STMT_LIST;
 	if (!(astmtn = astmt()))
 		return NULL;
-	if (lookahead_type != semi_tk)
-		expected("semicolon");
-	nexttok();
+	expect(semi_tk);
 	if(!(stmtlistn = stmtlist()))
 		return NULL;
 	astmtn->ts_data.astmt.next = stmtlistn;
@@ -356,12 +395,10 @@ stmtlist(void)
 
 #define ast_printf(tab_depth, ...)\
 {\
-	{\
 	int i;\
 	for (i = 0; i < tab_depth; i++)\
 		printf("\t");\
 	printf(__VA_ARGS__);\
-	}\
 }
 
 void
@@ -415,6 +452,7 @@ main(int argc, char **argv)
 	stmtlist   -> astmt; stmtlist
 	              | eps
 	astmt      -> var := expr
+	ifstmt     -> if (condexpr) { stmtlist }
 	expr       -> term eprime
 	eprime     -> + term eprime
 	              | - term eprime
