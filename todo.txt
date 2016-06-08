@@ -1,0 +1,2 @@
+-finish basic parsing
+-better error handling

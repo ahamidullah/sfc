@@ -1,1 +1,1 @@
-abcd := (width*height)+(45-(10/4)); b := 34*whattadoo;
+if (1) {abcd := (width*height)+(45-(10/4)); b := 34*whattadoo;}

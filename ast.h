@@ -5,6 +5,8 @@ typedef enum ast_type {
 	type_name,
 	type_num,
 	type_astmt,
+	type_ifstmt,
+	type_stmtlist,
 } ast_type;
 
 typedef enum ast_terminal {
@@ -25,14 +27,25 @@ typedef struct ast_expr {
 typedef struct ast_astmt {
 	struct ast_node *lval;
 	struct ast_node *rval;
-	struct ast_node *next;
 } ast_astmt;
 
+typedef struct ast_ifstmt {
+	struct ast_node *condexpr;
+	struct ast_node *stmtlist;
+} ast_ifstmt;
+
+typedef struct ast_stmtlist {
+	struct ast_node *stmt;
+	struct ast_node *next;
+} ast_stmtlist;
+
 typedef union ast_data {
-	ast_expr expr;
-	ast_astmt astmt;
 	char *name;
 	int num;
+	ast_expr expr;
+	ast_stmtlist stmtlist;
+	ast_astmt astmt;
+	ast_ifstmt ifstmt;
 } ast_data;
 
 typedef struct ast_node {

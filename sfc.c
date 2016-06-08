@@ -4,21 +4,23 @@
 #include <string.h>
 #include "ast.h"
 
-typedef enum { num_tk,
-               name_tk,
-               add_tk,
-               sub_tk,
-               mult_tk,
-               div_tk,
-               eof_tk,
-               _err_tk,
-               oparen_tk,
-               cparen_tk,
-               asg_tk,
-               semi_tk,
-               obrace_tk,
-               cbrace_tk,
-             } token_type;
+typedef enum {
+	_err_tk = 0,
+	num_tk,
+	name_tk,
+	add_tk,
+	sub_tk,
+	mult_tk,
+	div_tk,
+	eof_tk,
+	oparen_tk,
+	cparen_tk,
+	asg_tk,
+	semi_tk,
+	obrace_tk,
+	cbrace_tk,
+	if_tk,
+} token_type;
 
 token_type lookahead_type;
 char *lookahead;
@@ -26,7 +28,7 @@ int max_lookahead_sz;
 FILE *file;
 ast_node *ast;
 
-/*bad. temp....*/
+/*bad. temp...*/
 #define END_STMT_LIST -1
 
 int
@@ -40,7 +42,7 @@ isdelim(char c)
 	 || c == ')'
 	 || c == EOF
 	 || isspace(c)
-	 || c == ':'
+	 || c == '='
 	 || c == ';'
 	 || c == '{'
 	 || c == '}')
@@ -60,16 +62,23 @@ lookahead_append(char c)
 	lookahead[new_len] = '\0';
 }
 
-void
-accept_to_delim(int (*validc_func)(int))
+int
+try_till_delim(int (*validchar_func)(int))
 {
 	char c;
+	int is_tok = 1;
 	while (!isdelim((c = getc(file)))) {
 		lookahead_append(c);
-		if (!(*validc_func)(c)) lookahead_type = _err_tk;
+		if (!(*validchar_func)(c)) is_tok = 0;
 	}
 	ungetc(c, file);
-	return;
+	return is_tok;
+}
+
+int
+isvarc(int c)
+{
+	return (isalnum(c) || c == '_');
 }
 
 void
@@ -122,10 +131,15 @@ nexttok(void)
 	}
 	if (isdigit(c)) {
 		lookahead_type = num_tk;
-		accept_to_delim(&isdigit);
+		if (!try_till_delim(&isdigit))
+			lookahead_type = _err_tk;
 	} else if (isalpha(c)) {
-		lookahead_type = name_tk;
-		accept_to_delim(&isalpha);
+		if (!try_till_delim(&isvarc))
+			lookahead_type = _err_tk;
+		else if (!strcmp(lookahead, "if"))
+			lookahead_type = if_tk;
+		else
+			lookahead_type = name_tk;
 	}
 	return;
 }
@@ -301,8 +315,9 @@ ast_node *
 expr(void)
 {
 	ast_node *termn;
-	if ((termn = term()))
+	if ((termn = term())) {
 		return eprime(termn);
+	}
 	return NULL;
 }
 
@@ -357,40 +372,59 @@ astmt(void)
 	if (!(exprn = expr()))
 		return NULL;
 	n->ts_data.astmt.rval = exprn;
+	expect(semi_tk);
 	return n;
 }
-/*
+
 ast_node *
-ifstmt(void)
+condexpr(void)
 {
-	ast_node *n = create_node(type_ifstmt), *condexprn, *stmtlistn;
-	expect(if_tk);
-	expect(oparen_tk);
-	if (!(condn = condexpr()))
-		return NULL;
-	n->condexpr = condn;
-	expect(cparen_tk);
-	expect(obrace_tk);
-	if (!(stmtlistn = stmtlist()))
-		return NULL;
-	expect(cbrace_tk);
-	return n;
+	/*just an expr for now...*/
+	return expr();
 }
-*/
+
+ast_node *ifstmt(void);
+ast_node *astmt(void);
+
+ast_node *
+stmt(void)
+{
+	if (lookahead_type == if_tk) {
+		return ifstmt();
+	} else if (lookahead_type == name_tk) {
+		return astmt();
+	}
+	return NULL;
+}
+
 ast_node *
 stmtlist(void)
 {
-	ast_node *astmtn, *stmtlistn;
+	ast_node *stmtlistn = create_node(type_stmtlist);
 
-	if (lookahead_type == eof_tk)
+	if (lookahead_type == eof_tk || lookahead_type == cbrace_tk)
 		return END_STMT_LIST;
-	if (!(astmtn = astmt()))
+	if (!(stmtlistn->ts_data.stmtlist.stmt = stmt()))
 		return NULL;
-	expect(semi_tk);
-	if(!(stmtlistn = stmtlist()))
+	if(!(stmtlistn->ts_data.stmtlist.next = stmtlist()))
 		return NULL;
-	astmtn->ts_data.astmt.next = stmtlistn;
-	return astmtn;	
+	return stmtlistn;	
+}
+
+ast_node *
+ifstmt(void)
+{
+	ast_node *n = create_node(type_ifstmt);
+	expect(if_tk);
+	expect(oparen_tk);
+	if (!(n->ts_data.ifstmt.condexpr = condexpr()))
+		return NULL;
+	expect(cparen_tk);
+	expect(obrace_tk);
+	if (!(n->ts_data.ifstmt.stmtlist = stmtlist()))
+		return NULL;
+	expect(cbrace_tk);
+	return n;
 }
 
 #define ast_printf(tab_depth, ...)\
@@ -432,13 +466,22 @@ print_ast(ast_node *n, int depth)
 			ast_printf(depth, "%s\n", n->ts_data.name);
 			break;
 		case type_astmt:
-			for (; n != -1; n = n->ts_data.astmt.next) {
-				ast_printf(depth, "var name:\n");
-				print_ast(n->ts_data.astmt.lval, depth);
-				ast_printf(depth, "expr:\n");
-				print_ast(n->ts_data.astmt.rval, depth);
+			ast_printf(depth, "astmt:\n");
+			ast_printf(depth, "var name:\n");
+			print_ast(n->ts_data.astmt.lval, depth);
+			ast_printf(depth, "expr:\n");
+			print_ast(n->ts_data.astmt.rval, depth);
+			break;
+		case type_stmtlist:
+			for (; n != END_STMT_LIST; n = n->ts_data.stmtlist.next) {
+				print_ast(n->ts_data.stmtlist.stmt, depth);
 			}
 			break;
+		case type_ifstmt:
+			ast_printf(depth, "if stmt cond:\n");
+			print_ast(n->ts_data.ifstmt.condexpr, depth);
+			ast_printf(depth, "stmtlist\n");
+			print_ast(n->ts_data.ifstmt.stmtlist, depth);
 		default:
 			break;
 	}
@@ -449,8 +492,10 @@ int
 main(int argc, char **argv)
 {
 	/*
-	stmtlist   -> astmt; stmtlist
+	stmtlist   -> stmt stmtlist
 	              | eps
+	stmt       -> astmt;
+	              | ifstmt
 	astmt      -> var := expr
 	ifstmt     -> if (condexpr) { stmtlist }
 	expr       -> term eprime
