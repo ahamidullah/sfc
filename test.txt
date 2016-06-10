@@ -1,1 +1,11 @@
-if (1) {abcd := (width*height)+(45-(10/4)); b := 34*whattadoo;}
+for (i := 0; i; i := i+1) {
+	if (i + 2) {
+		while (test-3) {
+			what := (is + this);
+			how := can;
+		}
+	}
+	if (i + 1) {
+		t := i;
+	}
+}

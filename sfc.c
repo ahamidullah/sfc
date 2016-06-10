@@ -20,7 +20,20 @@ typedef enum {
 	obrace_tk,
 	cbrace_tk,
 	if_tk,
+	while_tk,
+	for_tk,
 } token_type;
+
+typedef struct keyword_token_map {
+	const char *str;
+	const token_type token;
+} keyword_token_map;
+
+const keyword_token_map keywords[] = {
+	{"if", if_tk},
+	{"while", while_tk},
+	{"for", for_tk},
+};
 
 token_type lookahead_type;
 char *lookahead;
@@ -134,12 +147,19 @@ nexttok(void)
 		if (!try_till_delim(&isdigit))
 			lookahead_type = _err_tk;
 	} else if (isalpha(c)) {
-		if (!try_till_delim(&isvarc))
+		int i, num_keywords = (sizeof(keywords)/sizeof(keywords[0]));
+
+		if (!try_till_delim(&isvarc)) {
 			lookahead_type = _err_tk;
-		else if (!strcmp(lookahead, "if"))
-			lookahead_type = if_tk;
-		else
-			lookahead_type = name_tk;
+			return;
+		}
+		for (i = 0; i < num_keywords; i++) {
+			if (!strcmp(keywords[i].str, lookahead)) {
+				lookahead_type = keywords[i].token;
+				return;
+			}
+		}
+		lookahead_type = name_tk;
 	}
 	return;
 }
@@ -345,7 +365,7 @@ eprime(ast_node *prev_termn)
 	if (!(termn = term()))
 		return NULL;
 	if (!(eprimen = eprime(termn)))
-		return NULL;	
+		return NULL;
 	n->type = type_expr;
 	n->ts_data.expr.left = prev_termn;
 	n->ts_data.expr.right = eprimen;
@@ -372,7 +392,6 @@ astmt(void)
 	if (!(exprn = expr()))
 		return NULL;
 	n->ts_data.astmt.rval = exprn;
-	expect(semi_tk);
 	return n;
 }
 
@@ -385,14 +404,22 @@ condexpr(void)
 
 ast_node *ifstmt(void);
 ast_node *astmt(void);
+ast_node *wstmt(void);
+ast_node *fstmt(void);
 
 ast_node *
 stmt(void)
 {
 	if (lookahead_type == if_tk) {
 		return ifstmt();
+	} else if (lookahead_type == while_tk) {
+		return wstmt();
+	} else if (lookahead_type == for_tk) {
+		return fstmt();
 	} else if (lookahead_type == name_tk) {
-		return astmt();
+		ast_node *n = astmt();
+		expect(semi_tk);
+		return n;
 	}
 	return NULL;
 }
@@ -427,6 +454,44 @@ ifstmt(void)
 	return n;
 }
 
+ast_node *
+wstmt(void)
+{
+	ast_node *n = create_node(type_wstmt);
+	expect(while_tk);
+	expect(oparen_tk);
+	if (!(n->ts_data.wstmt.condexpr = condexpr()))
+		return NULL;
+	expect(cparen_tk);
+	expect(obrace_tk);
+	if (!(n->ts_data.wstmt.stmtlist = stmtlist()))
+		return NULL;
+	expect(cbrace_tk);
+	return n;
+}
+
+ast_node *
+fstmt(void)
+{
+	ast_node *n = create_node(type_fstmt);
+	expect(for_tk);
+	expect(oparen_tk);
+	if (!(n->ts_data.fstmt.init = astmt()))
+		return NULL;
+	expect(semi_tk);
+	if (!(n->ts_data.fstmt.condexpr = condexpr()))
+		return NULL;
+	expect(semi_tk);
+	if (!(n->ts_data.fstmt.onloop = astmt()))
+		return NULL;
+	expect(cparen_tk);
+	expect(obrace_tk);
+	if (!(n->ts_data.fstmt.stmtlist = stmtlist()))
+		return NULL;
+	expect(cbrace_tk);
+	return n;
+}
+
 #define ast_printf(tab_depth, ...)\
 {\
 	int i;\
@@ -440,9 +505,7 @@ print_ast(ast_node *n, int depth)
 {
 	switch(n->type) {
 		case type_expr:
-			depth++;
 			ast_printf(depth, "Expression left child:\n");
-
 			print_ast(n->ts_data.expr.left, depth);
 			if (n->ts_data.expr.op == ast_add) {
 				ast_printf(depth, "+\n");
@@ -474,7 +537,7 @@ print_ast(ast_node *n, int depth)
 			break;
 		case type_stmtlist:
 			for (; n != END_STMT_LIST; n = n->ts_data.stmtlist.next) {
-				print_ast(n->ts_data.stmtlist.stmt, depth);
+				print_ast(n->ts_data.stmtlist.stmt, depth+1);
 			}
 			break;
 		case type_ifstmt:
@@ -482,6 +545,23 @@ print_ast(ast_node *n, int depth)
 			print_ast(n->ts_data.ifstmt.condexpr, depth);
 			ast_printf(depth, "stmtlist\n");
 			print_ast(n->ts_data.ifstmt.stmtlist, depth);
+			break;
+		case type_wstmt:
+			ast_printf(depth, "while stmt cond:\n");
+			print_ast(n->ts_data.wstmt.condexpr, depth);
+			ast_printf(depth, "stmtlist\n");
+			print_ast(n->ts_data.wstmt.stmtlist, depth);
+			break;
+		case type_fstmt:
+			ast_printf(depth, "for stmt init:\n");
+			print_ast(n->ts_data.fstmt.init, depth);
+			ast_printf(depth, "condexpr\n");
+			print_ast(n->ts_data.fstmt.condexpr, depth);
+			ast_printf(depth, "onloop\n");
+			print_ast(n->ts_data.fstmt.onloop, depth);
+			ast_printf(depth, "stmtlist\n");
+			print_ast(n->ts_data.fstmt.stmtlist, depth);
+			break;
 		default:
 			break;
 	}
@@ -496,8 +576,12 @@ main(int argc, char **argv)
 	              | eps
 	stmt       -> astmt;
 	              | ifstmt
+	              | wstmt
+	              | fstmt
 	astmt      -> var := expr
 	ifstmt     -> if (condexpr) { stmtlist }
+	wstmt      -> while (condexpr) { stmtlist }
+	fstmt      -> for (init; condexpr; onloop) { stmtlist }
 	expr       -> term eprime
 	eprime     -> + term eprime
 	              | - term eprime
@@ -516,6 +600,9 @@ main(int argc, char **argv)
 	max_lookahead_sz = 1;
 	nexttok();
 	ast = stmtlist();
-	print_ast(ast, -1);
+	if (ast)
+		print_ast(ast, -1);
+	else
+		printf("ast err\n");
 	return 0;
 }
