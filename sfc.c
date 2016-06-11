@@ -22,6 +22,10 @@ typedef enum {
 	if_tk,
 	while_tk,
 	for_tk,
+	gt_tk,
+	lt_tk,
+	gte_tk,
+	lte_tk,
 } token_type;
 
 typedef struct keyword_token_map {
@@ -35,9 +39,9 @@ const keyword_token_map keywords[] = {
 	{"for", for_tk},
 };
 
-token_type lookahead_type;
-char *lookahead;
-int max_lookahead_sz;
+token_type look;
+char *lookstr;
+int max_lookstr_sz;
 FILE *file;
 ast_node *ast;
 
@@ -58,21 +62,23 @@ isdelim(char c)
 	 || c == '='
 	 || c == ';'
 	 || c == '{'
-	 || c == '}')
+	 || c == '}'
+	 || c == '<'
+	 || c == '>')
 		return 1;
 	return 0;
 }
 
 void
-lookahead_append(char c)
+lookstr_append(char c)
 {
-	int new_len = strlen(lookahead)+1;
-	if (new_len >= max_lookahead_sz) {
-		max_lookahead_sz *= 2;
-		lookahead = realloc(lookahead, max_lookahead_sz);
+	int new_len = strlen(lookstr)+1;
+	if (new_len >= max_lookstr_sz) {
+		max_lookstr_sz *= 2;
+		lookstr = realloc(lookstr, max_lookstr_sz);
 	}
-	lookahead[new_len-1] = c;
-	lookahead[new_len] = '\0';
+	lookstr[new_len-1] = c;
+	lookstr[new_len] = '\0';
 }
 
 int
@@ -81,7 +87,7 @@ try_till_delim(int (*validchar_func)(int))
 	char c;
 	int is_tok = 1;
 	while (!isdelim((c = getc(file)))) {
-		lookahead_append(c);
+		lookstr_append(c);
 		if (!(*validchar_func)(c)) is_tok = 0;
 	}
 	ungetc(c, file);
@@ -99,67 +105,84 @@ nexttok(void)
 {
 	char c;
 
-	lookahead_type = _err_tk;
+	look = _err_tk;
 	while (isspace(c = getc(file)))
 		;
-	lookahead[0] = '\0';
-	lookahead_append(c);
+	lookstr[0] = '\0';
+	lookstr_append(c);
 	switch (c) {
 		case '+':
-			lookahead_type = add_tk;
+			look = add_tk;
 			return;
 		case '-':
-			lookahead_type = sub_tk;
+			look = sub_tk;
 			return;
 		case '*':
-			lookahead_type = mult_tk;
+			look = mult_tk;
 			return;
 		case '/':
-			lookahead_type = div_tk;
+			look = div_tk;
 			return;
 		case EOF:
-			lookahead_type =  eof_tk;
+			look =  eof_tk;
 			return;
 		case ')':
-			lookahead_type = cparen_tk;
+			look = cparen_tk;
 			return;
 		case '(':
-			lookahead_type = oparen_tk;
+			look = oparen_tk;
 			return;
 		case ':':
-			c = getc(file);
-			lookahead_append(c);
+			lookstr_append((c = getc(file)));
 			if (c == '=')
-				lookahead_type = asg_tk;
+				look = asg_tk;
 			return;
 		case ';':
-			lookahead_type = semi_tk;
+			look = semi_tk;
 			return;
 		case '{':
-			lookahead_type = obrace_tk;
+			look = obrace_tk;
 			return;
 		case '}':
-			lookahead_type = cbrace_tk;
+			look = cbrace_tk;
+			return;
+		case '>':
+			look = gt_tk;
+			c = getc(file);
+			if (c == '=') {
+				lookstr_append(c);
+				look = gte_tk;
+			} else
+				ungetc(c, file);
+			return;
+		case '<':
+			look = lt_tk;
+			c = getc(file);
+			if (c == '=') {
+				lookstr_append(c);
+				look = lte_tk;
+			} else
+				ungetc(c, file);
 			return;
 	}
 	if (isdigit(c)) {
-		lookahead_type = num_tk;
+		look = num_tk;
 		if (!try_till_delim(&isdigit))
-			lookahead_type = _err_tk;
+			look = _err_tk;
 	} else if (isalpha(c)) {
 		int i, num_keywords = (sizeof(keywords)/sizeof(keywords[0]));
 
 		if (!try_till_delim(&isvarc)) {
-			lookahead_type = _err_tk;
+			look = _err_tk;
 			return;
 		}
 		for (i = 0; i < num_keywords; i++) {
-			if (!strcmp(keywords[i].str, lookahead)) {
-				lookahead_type = keywords[i].token;
+			if (!strcmp(keywords[i].str, lookstr)) {
+				look = keywords[i].token;
 				return;
 			}
 		}
-		lookahead_type = name_tk;
+		look = name_tk;
 	}
 	return;
 }
@@ -204,7 +227,7 @@ expected(const char *lhs)
 void
 expect(token_type expected_type)
 {
-	if (lookahead_type == expected_type) {
+	if (look == expected_type) {
 		nexttok();
 		return;
 	}
@@ -257,7 +280,7 @@ num(void)
 {
 	ast_node *n = malloc(sizeof(ast_node));
 	n->type = type_num;
-	n->ts_data.num = atoi(lookahead);
+	n->ts_data.num = atoi(lookstr);
 	expect(num_tk);
 	return n;
 }
@@ -267,8 +290,8 @@ name(void)
 {
 	ast_node *n = malloc(sizeof(ast_node));
 	n->type = type_name;
-	n->ts_data.name = malloc(strlen(lookahead)+1);
-	strcpy(n->ts_data.name, lookahead);
+	n->ts_data.name = malloc(strlen(lookstr)+1);
+	strcpy(n->ts_data.name, lookstr);
 	expect(name_tk);
 	return n;
 }
@@ -276,18 +299,26 @@ name(void)
 ast_node * expr(void);
 
 ast_node *
+create_node(ast_type t)
+{
+	ast_node *n = malloc(sizeof(ast_node));
+	n->type = t;
+	return n;
+}
+
+ast_node *
 factor(void)
 {
-	if (lookahead_type == oparen_tk) {
+	if (look == oparen_tk) {
 		ast_node *n;
 		nexttok();
 		if (!(n = expr()))
 			return NULL;
 		expect(cparen_tk);
 		return n;
-	} else if (lookahead_type == num_tk)
+	} else if (look == num_tk)
 		return num();
-	else if (lookahead_type == name_tk)
+	else if (look == name_tk)
 		return name();
 	return NULL;
 }
@@ -297,16 +328,21 @@ tprime(ast_node *prev_factorn)
 {
 	ast_node *n, *tprimen, *factorn;
 
-	if (lookahead_type == semi_tk || lookahead_type == add_tk || lookahead_type == sub_tk || lookahead_type == cparen_tk) {
+	if (look == semi_tk
+	    || look == add_tk
+	    || look == sub_tk
+	    || look == cparen_tk
+	    || look == gt_tk
+	    || look == lt_tk
+	    || look == gte_tk
+	    || look == lte_tk)
 		return prev_factorn;
-	}
 
-	n = malloc(sizeof(ast_node));
-
-	if (lookahead_type == mult_tk) {
+	n = create_node(type_expr);
+	if (look == mult_tk) {
 		nexttok();
 		n->ts_data.expr.op = ast_mult;
-	} else if (lookahead_type == div_tk) {
+	} else if (look == div_tk) {
 		nexttok();
 		n->ts_data.expr.op = ast_div;
 	} else {
@@ -316,7 +352,6 @@ tprime(ast_node *prev_factorn)
 		return NULL;
 	if (!(tprimen = tprime(factorn)))
 		return NULL;	
-	n->type = type_expr;
 	n->ts_data.expr.left = prev_factorn;
 	n->ts_data.expr.right = tprimen;
 	return n;
@@ -332,12 +367,38 @@ term(void)
 }
 
 ast_node *
+cond(ast_node *left_expr)
+{
+	ast_node *n;
+	
+	if (look == semi_tk || look == cparen_tk)
+		return left_expr;
+	n = create_node(type_expr);
+	n->ts_data.expr.left = left_expr;
+	if (look == gt_tk)
+		n->ts_data.expr.op = ast_gt;
+	else if (look == lt_tk)
+		n->ts_data.expr.op = ast_lt;
+	else if (look == gte_tk)
+		n->ts_data.expr.op = ast_gte;
+	else if (look == lte_tk)
+		n->ts_data.expr.op = ast_lte;
+	else
+		expected("conditional operator");
+	nexttok();
+	if (!(n->ts_data.expr.right = expr()))
+		return NULL;
+	return n;
+}
+
+ast_node *
 expr(void)
 {
-	ast_node *termn;
-	if ((termn = term())) {
-		return eprime(termn);
-	}
+	ast_node *termn, *eprimen;
+	if (!(termn = term()))
+		return NULL;	
+	if ((eprimen = eprime(termn)))
+		return cond(eprimen);
 	return NULL;
 }
 
@@ -347,16 +408,19 @@ eprime(ast_node *prev_termn)
 {
 	ast_node *n, *eprimen, *termn;
 
-	if (lookahead_type == semi_tk || lookahead_type == cparen_tk) {
+	if (look == semi_tk
+	    || look == cparen_tk
+	    || look == gt_tk
+	    || look == lt_tk
+	    || look == gte_tk
+	    || look == lte_tk)
 		return prev_termn;
-	}
 
-	n = malloc(sizeof(ast_node));
-
-	if (lookahead_type == add_tk) {
+	n = create_node(type_expr);
+	if (look == add_tk) {
 		nexttok();
 		n->ts_data.expr.op = ast_add;
-	} else if (lookahead_type == sub_tk) {
+	} else if (look == sub_tk) {
 		nexttok();
 		n->ts_data.expr.op = ast_sub;
 	} else {
@@ -366,17 +430,8 @@ eprime(ast_node *prev_termn)
 		return NULL;
 	if (!(eprimen = eprime(termn)))
 		return NULL;
-	n->type = type_expr;
 	n->ts_data.expr.left = prev_termn;
 	n->ts_data.expr.right = eprimen;
-	return n;
-}
-
-ast_node *
-create_node(ast_type t)
-{
-	ast_node *n = malloc(sizeof(ast_node));
-	n->type = t;
 	return n;
 }
 
@@ -410,13 +465,13 @@ ast_node *fstmt(void);
 ast_node *
 stmt(void)
 {
-	if (lookahead_type == if_tk) {
+	if (look == if_tk) {
 		return ifstmt();
-	} else if (lookahead_type == while_tk) {
+	} else if (look == while_tk) {
 		return wstmt();
-	} else if (lookahead_type == for_tk) {
+	} else if (look == for_tk) {
 		return fstmt();
-	} else if (lookahead_type == name_tk) {
+	} else if (look == name_tk) {
 		ast_node *n = astmt();
 		expect(semi_tk);
 		return n;
@@ -429,7 +484,7 @@ stmtlist(void)
 {
 	ast_node *stmtlistn = create_node(type_stmtlist);
 
-	if (lookahead_type == eof_tk || lookahead_type == cbrace_tk)
+	if (look == eof_tk || look == cbrace_tk)
 		return END_STMT_LIST;
 	if (!(stmtlistn->ts_data.stmtlist.stmt = stmt()))
 		return NULL;
@@ -515,6 +570,14 @@ print_ast(ast_node *n, int depth)
 				ast_printf(depth, "/\n");
 			} else if (n->ts_data.expr.op == ast_mult) {
 				ast_printf(depth, "*\n");			
+			} else if (n->ts_data.expr.op == ast_gt) {
+				ast_printf(depth, ">\n");
+			} else if (n->ts_data.expr.op == ast_lt) {
+				ast_printf(depth, "<\n");
+			} else if (n->ts_data.expr.op == ast_gte) {
+				ast_printf(depth, ">=\n");
+			} else if (n->ts_data.expr.op == ast_lte) {
+				ast_printf(depth, "<=\n");
 			} else {
 				ast_printf(depth, "?\n");
 			}
@@ -582,7 +645,12 @@ main(int argc, char **argv)
 	ifstmt     -> if (condexpr) { stmtlist }
 	wstmt      -> while (condexpr) { stmtlist }
 	fstmt      -> for (init; condexpr; onloop) { stmtlist }
-	expr       -> term eprime
+	expr       -> term eprime cond
+	cond       -> > expr
+	              | < expr
+	              | >= expr
+	              | <= expr
+	              | eps
 	eprime     -> + term eprime
 	              | - term eprime
 	              | eps
@@ -595,9 +663,9 @@ main(int argc, char **argv)
 	              | name
 	*/
 	file = fopen(argv[1], "r");
-	lookahead = malloc(1);
-	lookahead[0] = '\0';
-	max_lookahead_sz = 1;
+	lookstr = malloc(1);
+	lookstr[0] = '\0';
+	max_lookstr_sz = 1;
 	nexttok();
 	ast = stmtlist();
 	if (ast)

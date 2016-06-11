@@ -1,11 +1,1 @@
-for (i := 0; i; i := i+1) {
-	if (i + 2) {
-		while (test-3) {
-			what := (is + this);
-			how := can;
-		}
-	}
-	if (i + 1) {
-		t := i;
-	}
-}
+a := 4<=2+4*b;

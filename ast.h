@@ -1,5 +1,3 @@
-struct ast_node;
-
 typedef enum ast_type {
 	type_expr,
 	type_name,
