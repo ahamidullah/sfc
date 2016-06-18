@@ -1,3 +1,5 @@
+typedef struct ast_node ast_node;
+
 typedef enum ast_type {
 	type_expr,
 	type_name,
@@ -21,36 +23,36 @@ typedef enum ast_terminal {
 } ast_terminal;
 
 typedef struct ast_expr {
-	struct ast_node *left;
+	ast_node *left;
 	ast_terminal op;
-	struct ast_node *right;
+	ast_node *right;
 } ast_expr;
 
 typedef struct ast_astmt {
-	struct ast_node *lval;
-	struct ast_node *rval;
+	ast_node *lval;
+	ast_node *rval;
 } ast_astmt;
 
 typedef struct ast_ifstmt {
-	struct ast_node *condexpr;
-	struct ast_node *stmtlist;
+	ast_node *condexpr;
+	ast_node *stmtlist;
 } ast_ifstmt;
 
 typedef struct ast_wstmt {
-	struct ast_node *condexpr;
-	struct ast_node *stmtlist;
+	ast_node *condexpr;
+	ast_node *stmtlist;
 } ast_wstmt;
 
 typedef struct ast_fstmt {
-	struct ast_node *init;
-	struct ast_node *condexpr;
-	struct ast_node *onloop;
-	struct ast_node *stmtlist;
+	ast_node *init;
+	ast_node *condexpr;
+	ast_node *onloop;
+	ast_node *stmtlist;
 } ast_fstmt;
 
 typedef struct ast_stmtlist {
-	struct ast_node *stmt;
-	struct ast_node *next;
+	ast_node *stmt;
+	ast_node *next;
 } ast_stmtlist;
 
 typedef union ast_data {

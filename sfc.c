@@ -1,3 +1,4 @@
+/*just a basic recursive descent parser for now...*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -28,6 +29,14 @@ typedef enum {
 	lte_tk,
 } token_type;
 
+token_type look;
+char *lookstr;
+int max_lookstr_sz;
+FILE *file;
+/*hack necessary because we don't properly handle errors yet, so 
+ *no way to distinguish between the end of a list and an error return*/
+#define END_STMT_LIST -1
+
 typedef struct keyword_token_map {
 	const char *str;
 	const token_type token;
@@ -38,15 +47,6 @@ const keyword_token_map keywords[] = {
 	{"while", while_tk},
 	{"for", for_tk},
 };
-
-token_type look;
-char *lookstr;
-int max_lookstr_sz;
-FILE *file;
-ast_node *ast;
-
-/*bad. temp...*/
-#define END_STMT_LIST -1
 
 int
 isdelim(char c)
@@ -69,6 +69,7 @@ isdelim(char c)
 	return 0;
 }
 
+/*resize lookstr if new char goes past max_lookstr_sz*/
 void
 lookstr_append(char c)
 {
@@ -81,6 +82,7 @@ lookstr_append(char c)
 	lookstr[new_len] = '\0';
 }
 
+/*eat chars till delim and make sure validchar_func is true for all*/
 int
 try_till_delim(int (*validchar_func)(int))
 {
@@ -100,8 +102,9 @@ isvarc(int c)
 	return (isalnum(c) || c == '_');
 }
 
+/*eat chars till delim. add them to lookstr. set look to corresponding token*/
 void
-nexttok(void)
+nexttok()
 {
 	char c;
 
@@ -264,19 +267,10 @@ expect(token_type expected_type)
 	}
 }
 
-/*
-void
-accept(token_type tk)
-{
-	nexttok();
-	return;
-}
-*/
-
 ast_node *eprime(ast_node *);
 
 ast_node *
-num(void)
+num()
 {
 	ast_node *n = malloc(sizeof(ast_node));
 	n->type = type_num;
@@ -286,7 +280,7 @@ num(void)
 }
 
 ast_node *
-name(void)
+name()
 {
 	ast_node *n = malloc(sizeof(ast_node));
 	n->type = type_name;
@@ -296,7 +290,7 @@ name(void)
 	return n;
 }
 
-ast_node * expr(void);
+ast_node * expr();
 
 ast_node *
 create_node(ast_type t)
@@ -307,7 +301,7 @@ create_node(ast_type t)
 }
 
 ast_node *
-factor(void)
+factor()
 {
 	if (look == oparen_tk) {
 		ast_node *n;
@@ -358,7 +352,7 @@ tprime(ast_node *prev_factorn)
 }
 
 ast_node *
-term(void)
+term()
 {
 	ast_node *fnode;
 	if ((fnode = factor()))
@@ -392,7 +386,7 @@ cond(ast_node *left_expr)
 }
 
 ast_node *
-expr(void)
+expr()
 {
 	ast_node *termn, *eprimen;
 	if (!(termn = term()))
@@ -436,7 +430,7 @@ eprime(ast_node *prev_termn)
 }
 
 ast_node *
-astmt(void)
+astmt()
 {
 	ast_node *n = create_node(type_astmt), *namen, *exprn;
 
@@ -451,19 +445,19 @@ astmt(void)
 }
 
 ast_node *
-condexpr(void)
+condexpr()
 {
 	/*just an expr for now...*/
 	return expr();
 }
 
-ast_node *ifstmt(void);
-ast_node *astmt(void);
-ast_node *wstmt(void);
-ast_node *fstmt(void);
+ast_node *ifstmt();
+ast_node *astmt();
+ast_node *wstmt();
+ast_node *fstmt();
 
 ast_node *
-stmt(void)
+stmt()
 {
 	if (look == if_tk) {
 		return ifstmt();
@@ -480,7 +474,7 @@ stmt(void)
 }
 
 ast_node *
-stmtlist(void)
+stmtlist()
 {
 	ast_node *stmtlistn = create_node(type_stmtlist);
 
@@ -494,7 +488,7 @@ stmtlist(void)
 }
 
 ast_node *
-ifstmt(void)
+ifstmt()
 {
 	ast_node *n = create_node(type_ifstmt);
 	expect(if_tk);
@@ -510,7 +504,7 @@ ifstmt(void)
 }
 
 ast_node *
-wstmt(void)
+wstmt()
 {
 	ast_node *n = create_node(type_wstmt);
 	expect(while_tk);
@@ -526,7 +520,7 @@ wstmt(void)
 }
 
 ast_node *
-fstmt(void)
+fstmt()
 {
 	ast_node *n = create_node(type_fstmt);
 	expect(for_tk);
@@ -634,7 +628,7 @@ print_ast(ast_node *n, int depth)
 int
 main(int argc, char **argv)
 {
-	/*
+	/* grammar:
 	stmtlist   -> stmt stmtlist
 	              | eps
 	stmt       -> astmt;
@@ -667,7 +661,7 @@ main(int argc, char **argv)
 	lookstr[0] = '\0';
 	max_lookstr_sz = 1;
 	nexttok();
-	ast = stmtlist();
+	ast_node *ast = stmtlist();
 	if (ast)
 		print_ast(ast, -1);
 	else

@@ -1,13 +1,10 @@
+OBJS = sfc.c
 CC = gcc
+CFLAGS = -O0 -g -std=c89 -Wall -Wextra -Wfloat-equal -Wundef -Wshadow -Wpointer-arith -Wcast-align -Wstrict-overflow -Wwrite-strings
+LFLAGS = 
+OBJ_NAME = sfc
 
-CFLAGS = -O0 -g -std=c89 -Wall -Wextra -Wfloat-equal -Wundef -Wshadow -Wpointer-arith -Wcast-align -Wstrict-prototypes -Wstrict-overflow -Wwrite-strings
+all: $(OBJS)
+	$(CC) $(OBJS) $(CFLAGS) $(LFLAGS) -o $(OBJ_NAME)
 
-all: sfc
-
-sfc: sfc.o
-	$(CC) -o sfc sfc.o
-
-sfc.o: sfc.c
-	$(CC) $(CFLAGS) -c sfc.c
-
-clean: rm -f sfc sfc.o
+clean: rm -f $(OBJ_NAME) *.o
