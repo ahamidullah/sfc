@@ -1,0 +1,8 @@
+TODO_NEW:
+	-parser: var decls
+	-basic error handling
+	-basic code gen
+
+TODO_BUG:
+
+DONE:

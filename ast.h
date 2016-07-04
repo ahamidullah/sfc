@@ -1,4 +1,14 @@
+#ifndef __AST_H__
+#define __AST_H__
+
+#include <stdint.h>
+
 typedef struct ast_node ast_node;
+/*BOILERPLATE*/
+
+/*hack necessary because we don't properly handle errors yet, so 
+ *no way to distinguish between the end of a list and an error return*/
+#define END_STMT_LIST -1
 
 typedef enum ast_type {
 	type_expr,
@@ -70,3 +80,34 @@ typedef struct ast_node {
 	ast_type type;
 	ast_data ts_data; /*type specific data*/
 } ast_node;
+
+/*boilerplate*/
+typedef enum instruction_op {
+	mov_op = 0,
+	add_op,
+	sub_op,
+	imul_op,
+	idiv_op,
+} instruction_op;
+
+typedef enum operand_type {
+	register_rnd,
+	memory_rnd,
+	constant_rnd,
+	none_rnd
+} operand_type;
+
+typedef struct operand {
+	/*just use a string?*/
+	operand_type type;
+	int value;
+} operand;
+
+typedef struct instruction {
+	ast_terminal op;
+	operand o1;
+	operand o2;
+	struct instruction *next;
+} instruction;
+
+#endif

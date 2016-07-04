@@ -1,10 +1,14 @@
-/*just a basic recursive descent parser for now...*/
+/*just a basic recursive descent parser for now...
+* a lot of stuff is boilerplate that we should
+* generate when we know how it's going to finally be laid out
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
 #include "ast.h"
 
+/*BOILERPLATE*/
 typedef enum {
 	_err_tk = 0,
 	num_tk,
@@ -33,9 +37,6 @@ token_type look;
 char *lookstr;
 int max_lookstr_sz;
 FILE *file;
-/*hack necessary because we don't properly handle errors yet, so 
- *no way to distinguish between the end of a list and an error return*/
-#define END_STMT_LIST -1
 
 typedef struct keyword_token_map {
 	const char *str;
@@ -48,6 +49,7 @@ const keyword_token_map keywords[] = {
 	{"for", for_tk},
 };
 
+/*BOILERPLATE*/
 int
 isdelim(char c)
 {
@@ -96,6 +98,7 @@ try_till_delim(int (*validchar_func)(int))
 	return is_tok;
 }
 
+/*check if character is valid variable character*/
 int
 isvarc(int c)
 {
@@ -215,18 +218,7 @@ expected(const char *lhs)
 	abortc("Expected %s.", lhs);
 }
 
-#define emit(...)\
-{\
-	printf("\t");\
-	printf(__VA_ARGS__);\
-}
-
-#define emitln(...)\
-{\
-	emit(__VA_ARGS__);\
-	emit("\n");\
-}
-
+/*BOILERPLATE*/
 void
 expect(token_type expected_type)
 {
@@ -541,89 +533,7 @@ fstmt()
 	return n;
 }
 
-#define ast_printf(tab_depth, ...)\
-{\
-	int i;\
-	for (i = 0; i < tab_depth; i++)\
-		printf("\t");\
-	printf(__VA_ARGS__);\
-}
-
-void
-print_ast(ast_node *n, int depth)
-{
-	switch(n->type) {
-		case type_expr:
-			ast_printf(depth, "Expression left child:\n");
-			print_ast(n->ts_data.expr.left, depth);
-			if (n->ts_data.expr.op == ast_add) {
-				ast_printf(depth, "+\n");
-			} else if (n->ts_data.expr.op == ast_sub) {
-				ast_printf(depth, "-\n");
-			} else if (n->ts_data.expr.op == ast_div) {
-				ast_printf(depth, "/\n");
-			} else if (n->ts_data.expr.op == ast_mult) {
-				ast_printf(depth, "*\n");			
-			} else if (n->ts_data.expr.op == ast_gt) {
-				ast_printf(depth, ">\n");
-			} else if (n->ts_data.expr.op == ast_lt) {
-				ast_printf(depth, "<\n");
-			} else if (n->ts_data.expr.op == ast_gte) {
-				ast_printf(depth, ">=\n");
-			} else if (n->ts_data.expr.op == ast_lte) {
-				ast_printf(depth, "<=\n");
-			} else {
-				ast_printf(depth, "?\n");
-			}
-			ast_printf(depth, "Expression right child:\n");
-
-			print_ast(n->ts_data.expr.right, depth);
-			break;
-		case type_num:
-			ast_printf(depth, "%d\n", n->ts_data.num);
-			break;
-		case type_name:
-			ast_printf(depth, "%s\n", n->ts_data.name);
-			break;
-		case type_astmt:
-			ast_printf(depth, "astmt:\n");
-			ast_printf(depth, "var name:\n");
-			print_ast(n->ts_data.astmt.lval, depth);
-			ast_printf(depth, "expr:\n");
-			print_ast(n->ts_data.astmt.rval, depth);
-			break;
-		case type_stmtlist:
-			for (; n != END_STMT_LIST; n = n->ts_data.stmtlist.next) {
-				print_ast(n->ts_data.stmtlist.stmt, depth+1);
-			}
-			break;
-		case type_ifstmt:
-			ast_printf(depth, "if stmt cond:\n");
-			print_ast(n->ts_data.ifstmt.condexpr, depth);
-			ast_printf(depth, "stmtlist\n");
-			print_ast(n->ts_data.ifstmt.stmtlist, depth);
-			break;
-		case type_wstmt:
-			ast_printf(depth, "while stmt cond:\n");
-			print_ast(n->ts_data.wstmt.condexpr, depth);
-			ast_printf(depth, "stmtlist\n");
-			print_ast(n->ts_data.wstmt.stmtlist, depth);
-			break;
-		case type_fstmt:
-			ast_printf(depth, "for stmt init:\n");
-			print_ast(n->ts_data.fstmt.init, depth);
-			ast_printf(depth, "condexpr\n");
-			print_ast(n->ts_data.fstmt.condexpr, depth);
-			ast_printf(depth, "onloop\n");
-			print_ast(n->ts_data.fstmt.onloop, depth);
-			ast_printf(depth, "stmtlist\n");
-			print_ast(n->ts_data.fstmt.stmtlist, depth);
-			break;
-		default:
-			break;
-	}
-	return;
-}
+void codegen(ast_node *ast);
 
 int
 main(int argc, char **argv)
@@ -663,8 +573,8 @@ main(int argc, char **argv)
 	nexttok();
 	ast_node *ast = stmtlist();
 	if (ast)
-		print_ast(ast, -1);
+		codegen(ast);
 	else
-		printf("ast err\n");
+		printerr("ast err\n");
 	return 0;
 }
