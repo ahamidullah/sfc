@@ -130,7 +130,7 @@ get_virt_reg()
 }
 
 static void
-traverse_ast(ast_node *node, operand_stack *targets, symbol *symtab, instruction_queue *instrs)
+traverse_ast(ast_node *node, operand_stack *targets, symbol_table *symtab, instruction_queue *instrs)
 {
 	switch(node->type) {
 		case type_expr:
