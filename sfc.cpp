@@ -49,7 +49,6 @@ const keyword_token_map keywords[] = {
 	{"for", for_tk},
 };
 
-/*BOILERPLATE*/
 int
 isdelim(char c)
 {
@@ -78,7 +77,7 @@ lookstr_append(char c)
 	int new_len = strlen(lookstr)+1;
 	if (new_len >= max_lookstr_sz) {
 		max_lookstr_sz *= 2;
-		lookstr = realloc(lookstr, max_lookstr_sz);
+		lookstr = (char *)realloc(lookstr, max_lookstr_sz);
 	}
 	lookstr[new_len-1] = c;
 	lookstr[new_len] = '\0';
@@ -264,7 +263,7 @@ ast_node *eprime(ast_node *);
 ast_node *
 num()
 {
-	ast_node *n = malloc(sizeof(ast_node));
+	ast_node *n = (ast_node *)malloc(sizeof(ast_node));
 	n->type = type_num;
 	n->ts_data.num = atoi(lookstr);
 	expect(num_tk);
@@ -274,9 +273,9 @@ num()
 ast_node *
 name()
 {
-	ast_node *n = malloc(sizeof(ast_node));
+	ast_node *n = (ast_node *)malloc(sizeof(ast_node));
 	n->type = type_name;
-	n->ts_data.name = malloc(strlen(lookstr)+1);
+	n->ts_data.name = (char *)malloc(strlen(lookstr)+1);
 	strcpy(n->ts_data.name, lookstr);
 	expect(name_tk);
 	return n;
@@ -287,7 +286,7 @@ ast_node * expr();
 ast_node *
 create_node(ast_type t)
 {
-	ast_node *n = malloc(sizeof(ast_node));
+	ast_node *n = (ast_node *)malloc(sizeof(ast_node));
 	n->type = t;
 	return n;
 }
@@ -533,7 +532,7 @@ fstmt()
 	return n;
 }
 
-void codegen(ast_node *ast);
+void gencode(ast_node *ast);
 
 int
 main(int argc, char **argv)
@@ -566,14 +565,16 @@ main(int argc, char **argv)
 	              | num
 	              | name
 	*/
+	if (argc == 1)
+		abortc("no filename given");
 	file = fopen(argv[1], "r");
-	lookstr = malloc(1);
+	lookstr = (char *)malloc(1);
 	lookstr[0] = '\0';
 	max_lookstr_sz = 1;
 	nexttok();
 	ast_node *ast = stmtlist();
 	if (ast)
-		codegen(ast);
+		gencode(ast);
 	else
 		printerr("ast err\n");
 	return 0;
