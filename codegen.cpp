@@ -4,6 +4,7 @@
 #include <string.h>
 #include "ast.h"
 
+/*
 typedef enum instruction_op {
 	err_op = 0,
 	mov_op,
@@ -12,6 +13,7 @@ typedef enum instruction_op {
 	imul_op,
 	idiv_op,
 } instruction_op;
+*/
 
 typedef enum operand_type {
 	register_rnd,
@@ -27,7 +29,7 @@ typedef struct operand {
 } operand;
 
 typedef struct instruction {
-	instruction_op op;
+	const char *op;
 	operand o1;
 	operand o2;
 } instruction;
@@ -56,7 +58,7 @@ typedef struct symbol_table {
 symbol *
 lookup(symbol_table *t, const char *name)
 {
-	for (int i = 0; i < t->size; ++i) {
+	for (size_t i = 0; i < t->size; ++i) {
 		if (strcmp(name, t->data[i].name) == 1)
 			return &t->data[i];
 	}
@@ -96,7 +98,7 @@ unqueue_instruction(instruction_queue *q)
 }
 
 static void
-add_instruction(instruction_op op, operand o1, operand o2, instruction_queue *instrs)
+add_instruction(const char *op, operand o1, operand o2, instruction_queue *instrs)
 {
 	instruction *ni = (instruction *)malloc(sizeof(instruction));
 	ni->op = op;
@@ -105,7 +107,7 @@ add_instruction(instruction_op op, operand o1, operand o2, instruction_queue *in
 	queue_instruction(ni, instrs);
 }
 
-/* boilerplate */
+/*
 static instruction_op
 ast_op_to_instr_op(ast_terminal ast_op)
 {
@@ -121,6 +123,7 @@ ast_op_to_instr_op(ast_terminal ast_op)
 	}
 	return err_op;
 }
+*/
 
 static int
 get_virt_reg()
@@ -130,29 +133,28 @@ get_virt_reg()
 }
 
 static void
-traverse_ast(ast_node *node, operand_stack *targets, symbol_table *symtab, instruction_queue *instrs)
+traverse_ast(ast_node *n, operand_stack *targets, symbol_table *symtab, instruction_queue *instrs)
 {
-	switch(node->type) {
+	switch(n->type) {
 		case type_expr:
 		{
-			traverse_ast(node->ts_data.expr.left, targets, symtab, instrs);
-			traverse_ast(node->ts_data.expr.right, targets, symtab, instrs);
+			traverse_ast(n->expr.left, targets, symtab, instrs);
+			traverse_ast(n->expr.right, targets, symtab, instrs);
 			operand r_expr = pop_operand(targets);
 			operand l_expr = pop_operand(targets);
-			add_instruction(ast_op_to_instr_op(node->ts_data.expr.op), l_expr, r_expr, instrs);
+			add_instruction(n->expr.op, l_expr, r_expr, instrs);
 			/* x86 stores result into first register */
 			push_operand(l_expr, targets);
 			return;
 		}
 		case type_astmt:
 		{
-			traverse_ast(node->ts_data.astmt.lval, targets, symtab, instrs);
-			traverse_ast(node->ts_data.astmt.rval, targets, symtab, instrs);
+			traverse_ast(n->astmt.lval, targets, symtab, instrs);
+			traverse_ast(n->astmt.rval, targets, symtab, instrs);
 			operand source = pop_operand(targets);
 			operand target = pop_operand(targets);
-			add_instruction(mov_op, target, source, instrs);
+			add_instruction("MOV", target, source, instrs);
 			push_operand(target, targets);
-			/*gen_astmt(pop_operand(targets), pop_operand(targets), targets, instrs);*/
 			return;
 		}
 		case type_name:
@@ -160,25 +162,23 @@ traverse_ast(ast_node *node, operand_stack *targets, symbol_table *symtab, instr
 			operand target_reg = { register_rnd, get_virt_reg() };
 			/* just stick a one in there for now */
 			operand constant = { constant_rnd, 1 };
-			add_instruction(mov_op, target_reg, constant, instrs);
+			add_instruction("MOV", target_reg, constant, instrs);
 			push_operand(target_reg, targets);
-			/*gen_name(node->ts_data.name, targets, instrs);*/
 			return;
 		}
 		case type_stmtlist:
 		{
-			for (; node != END_STMT_LIST; node = node->ts_data.stmtlist.next) {
-				traverse_ast(node->ts_data.stmtlist.stmt, targets, symtab, instrs);
+			for (; n != END_STMT_LIST; n = n->stmtlist.next) {
+				traverse_ast(n->stmtlist.stmt, targets, symtab, instrs);
 			}
 			return;
 		}
 		case type_num:
 		{
 			operand target_reg = { register_rnd, get_virt_reg() };
-			operand constant = { constant_rnd, node->ts_data.num };
-			add_instruction(mov_op, target_reg, constant, instrs);
+			operand constant = { constant_rnd, n->num };
+			add_instruction("MOV", target_reg, constant, instrs);
 			push_operand(target_reg, targets);
-			/*gen_num(node->ts_data.num, targets, instrs);*/
 			return;
 		}
 	}
@@ -203,6 +203,7 @@ print_instructions(instruction_queue *q)
 		printf("%d } ", o.value);
 	};
 	for (instruction *cur = unqueue_instruction(q); cur; cur = unqueue_instruction(q)) {
+		/*
 		switch (cur->op) {
 			case mov_op:
 				printf("MOV ");
@@ -223,6 +224,8 @@ print_instructions(instruction_queue *q)
 				printf("__ERROR__ ");
 				break;
 		}
+		*/
+		printf("%s ", cur->op);
 		print_operand(cur->o1);
 		print_operand(cur->o2);
 		printf("\n");

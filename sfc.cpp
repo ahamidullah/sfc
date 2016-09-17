@@ -265,7 +265,7 @@ num()
 {
 	ast_node *n = (ast_node *)malloc(sizeof(ast_node));
 	n->type = type_num;
-	n->ts_data.num = atoi(lookstr);
+	n->num = atoi(lookstr);
 	expect(num_tk);
 	return n;
 }
@@ -275,8 +275,8 @@ name()
 {
 	ast_node *n = (ast_node *)malloc(sizeof(ast_node));
 	n->type = type_name;
-	n->ts_data.name = (char *)malloc(strlen(lookstr)+1);
-	strcpy(n->ts_data.name, lookstr);
+	n->name = (char *)malloc(strlen(lookstr)+1);
+	strcpy(n->name, lookstr);
 	expect(name_tk);
 	return n;
 }
@@ -326,10 +326,10 @@ tprime(ast_node *prev_factorn)
 	n = create_node(type_expr);
 	if (look == mult_tk) {
 		nexttok();
-		n->ts_data.expr.op = ast_mult;
+		n->expr.op = "MUL";
 	} else if (look == div_tk) {
 		nexttok();
-		n->ts_data.expr.op = ast_div;
+		n->expr.op = "DIV";
 	} else {
 		expected("multiplication or division sign");
 	}
@@ -337,8 +337,8 @@ tprime(ast_node *prev_factorn)
 		return NULL;
 	if (!(tprimen = tprime(factorn)))
 		return NULL;	
-	n->ts_data.expr.left = prev_factorn;
-	n->ts_data.expr.right = tprimen;
+	n->expr.left = prev_factorn;
+	n->expr.right = tprimen;
 	return n;
 }
 
@@ -359,19 +359,19 @@ cond(ast_node *left_expr)
 	if (look == semi_tk || look == cparen_tk)
 		return left_expr;
 	n = create_node(type_expr);
-	n->ts_data.expr.left = left_expr;
+	n->expr.left = left_expr;
 	if (look == gt_tk)
-		n->ts_data.expr.op = ast_gt;
+		n->expr.op = "GT";
 	else if (look == lt_tk)
-		n->ts_data.expr.op = ast_lt;
+		n->expr.op = "LT";
 	else if (look == gte_tk)
-		n->ts_data.expr.op = ast_gte;
+		n->expr.op = "GTE";
 	else if (look == lte_tk)
-		n->ts_data.expr.op = ast_lte;
+		n->expr.op = "LTE";
 	else
 		expected("conditional operator");
 	nexttok();
-	if (!(n->ts_data.expr.right = expr()))
+	if (!(n->expr.right = expr()))
 		return NULL;
 	return n;
 }
@@ -404,10 +404,10 @@ eprime(ast_node *prev_termn)
 	n = create_node(type_expr);
 	if (look == add_tk) {
 		nexttok();
-		n->ts_data.expr.op = ast_add;
+		n->expr.op = "ADD";
 	} else if (look == sub_tk) {
 		nexttok();
-		n->ts_data.expr.op = ast_sub;
+		n->expr.op = "SUB";
 	} else {
 		expected("plus or minus sign");
 	}
@@ -415,8 +415,8 @@ eprime(ast_node *prev_termn)
 		return NULL;
 	if (!(eprimen = eprime(termn)))
 		return NULL;
-	n->ts_data.expr.left = prev_termn;
-	n->ts_data.expr.right = eprimen;
+	n->expr.left = prev_termn;
+	n->expr.right = eprimen;
 	return n;
 }
 
@@ -427,11 +427,11 @@ astmt()
 
 	if (!(namen = name()))
 		return NULL;
-	n->ts_data.astmt.lval = namen;
+	n->astmt.lval = namen;
 	expect(asg_tk);
 	if (!(exprn = expr()))
 		return NULL;
-	n->ts_data.astmt.rval = exprn;
+	n->astmt.rval = exprn;
 	return n;
 }
 
@@ -471,9 +471,9 @@ stmtlist()
 
 	if (look == eof_tk || look == cbrace_tk)
 		return END_STMT_LIST;
-	if (!(stmtlistn->ts_data.stmtlist.stmt = stmt()))
+	if (!(stmtlistn->stmtlist.stmt = stmt()))
 		return NULL;
-	if(!(stmtlistn->ts_data.stmtlist.next = stmtlist()))
+	if(!(stmtlistn->stmtlist.next = stmtlist()))
 		return NULL;
 	return stmtlistn;	
 }
@@ -484,11 +484,11 @@ ifstmt()
 	ast_node *n = create_node(type_ifstmt);
 	expect(if_tk);
 	expect(oparen_tk);
-	if (!(n->ts_data.ifstmt.condexpr = condexpr()))
+	if (!(n->ifstmt.condexpr = condexpr()))
 		return NULL;
 	expect(cparen_tk);
 	expect(obrace_tk);
-	if (!(n->ts_data.ifstmt.stmtlist = stmtlist()))
+	if (!(n->ifstmt.stmtlist = stmtlist()))
 		return NULL;
 	expect(cbrace_tk);
 	return n;
@@ -500,11 +500,11 @@ wstmt()
 	ast_node *n = create_node(type_wstmt);
 	expect(while_tk);
 	expect(oparen_tk);
-	if (!(n->ts_data.wstmt.condexpr = condexpr()))
+	if (!(n->wstmt.condexpr = condexpr()))
 		return NULL;
 	expect(cparen_tk);
 	expect(obrace_tk);
-	if (!(n->ts_data.wstmt.stmtlist = stmtlist()))
+	if (!(n->wstmt.stmtlist = stmtlist()))
 		return NULL;
 	expect(cbrace_tk);
 	return n;
@@ -516,17 +516,17 @@ fstmt()
 	ast_node *n = create_node(type_fstmt);
 	expect(for_tk);
 	expect(oparen_tk);
-	if (!(n->ts_data.fstmt.init = astmt()))
+	if (!(n->fstmt.init = astmt()))
 		return NULL;
 	expect(semi_tk);
-	if (!(n->ts_data.fstmt.condexpr = condexpr()))
+	if (!(n->fstmt.condexpr = condexpr()))
 		return NULL;
 	expect(semi_tk);
-	if (!(n->ts_data.fstmt.onloop = astmt()))
+	if (!(n->fstmt.onloop = astmt()))
 		return NULL;
 	expect(cparen_tk);
 	expect(obrace_tk);
-	if (!(n->ts_data.fstmt.stmtlist = stmtlist()))
+	if (!(n->fstmt.stmtlist = stmtlist()))
 		return NULL;
 	expect(cbrace_tk);
 	return n;

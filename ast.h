@@ -21,6 +21,7 @@ typedef enum ast_type {
 	type_fstmt,
 } ast_type;
 
+/*
 typedef enum ast_terminal {
 	ast_add,
 	ast_sub,
@@ -31,10 +32,11 @@ typedef enum ast_terminal {
 	ast_gte,
 	ast_lte,
 } ast_terminal;
+*/
 
 typedef struct ast_expr {
 	ast_node *left;
-	ast_terminal op;
+	const char *op;
 	ast_node *right;
 } ast_expr;
 
@@ -65,6 +67,7 @@ typedef struct ast_stmtlist {
 	ast_node *next;
 } ast_stmtlist;
 
+/*
 typedef union ast_data {
 	char *name;
 	int num;
@@ -75,10 +78,21 @@ typedef union ast_data {
 	ast_wstmt wstmt;
 	ast_fstmt fstmt;
 } ast_data;
+*/
 
 typedef struct ast_node {
 	ast_type type;
-	ast_data ts_data; /* type specific data */
+	union {
+		char *name;
+		int num;
+		ast_expr expr;
+		ast_stmtlist stmtlist;
+		ast_astmt astmt;
+		ast_ifstmt ifstmt;
+		ast_wstmt wstmt;
+		ast_fstmt fstmt;
+	};
+	//ast_data ts_data; /* type specific data */
 } ast_node;
 
 #endif
