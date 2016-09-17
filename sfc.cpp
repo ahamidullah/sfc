@@ -9,7 +9,7 @@
 #include "ast.h"
 
 /*BOILERPLATE*/
-typedef enum {
+enum token_type {
 	_err_tk = 0,
 	num_tk,
 	name_tk,
@@ -31,17 +31,17 @@ typedef enum {
 	lt_tk,
 	gte_tk,
 	lte_tk,
-} token_type;
+};
 
 token_type look;
 char *lookstr;
 int max_lookstr_sz;
 FILE *file;
 
-typedef struct keyword_token_map {
+struct keyword_token_map {
 	const char *str;
 	const token_type token;
-} keyword_token_map;
+};
 
 const keyword_token_map keywords[] = {
 	{"if", if_tk},
@@ -49,6 +49,7 @@ const keyword_token_map keywords[] = {
 	{"for", for_tk},
 };
 
+static
 int
 isdelim(char c)
 {
@@ -71,6 +72,7 @@ isdelim(char c)
 }
 
 /*resize lookstr if new char goes past max_lookstr_sz*/
+static
 void
 lookstr_append(char c)
 {
@@ -84,6 +86,7 @@ lookstr_append(char c)
 }
 
 /*eat chars till delim and make sure validchar_func is true for all*/
+static
 int
 try_till_delim(int (*validchar_func)(int))
 {
@@ -98,6 +101,7 @@ try_till_delim(int (*validchar_func)(int))
 }
 
 /*check if character is valid variable character*/
+static
 int
 isvarc(int c)
 {
@@ -105,6 +109,7 @@ isvarc(int c)
 }
 
 /*eat chars till delim. add them to lookstr. set look to corresponding token*/
+static
 void
 nexttok()
 {
@@ -211,6 +216,7 @@ nexttok()
 	exit(1);\
 }
 
+static
 void
 expected(const char *lhs)
 {
@@ -218,6 +224,7 @@ expected(const char *lhs)
 }
 
 /*BOILERPLATE*/
+static
 void
 expect(token_type expected_type)
 {
@@ -258,8 +265,9 @@ expect(token_type expected_type)
 	}
 }
 
-ast_node *eprime(ast_node *);
+static ast_node *eprime(ast_node *);
 
+static
 ast_node *
 num()
 {
@@ -270,6 +278,7 @@ num()
 	return n;
 }
 
+static
 ast_node *
 name()
 {
@@ -281,8 +290,9 @@ name()
 	return n;
 }
 
-ast_node * expr();
+static ast_node * expr();
 
+static
 ast_node *
 create_node(ast_type t)
 {
@@ -291,6 +301,7 @@ create_node(ast_type t)
 	return n;
 }
 
+static
 ast_node *
 factor()
 {
@@ -308,6 +319,7 @@ factor()
 	return NULL;
 }
 
+static
 ast_node *
 tprime(ast_node *prev_factorn)
 {
@@ -342,6 +354,7 @@ tprime(ast_node *prev_factorn)
 	return n;
 }
 
+static
 ast_node *
 term()
 {
@@ -351,6 +364,7 @@ term()
 	return NULL;
 }
 
+static
 ast_node *
 cond(ast_node *left_expr)
 {
@@ -376,6 +390,7 @@ cond(ast_node *left_expr)
 	return n;
 }
 
+static
 ast_node *
 expr()
 {
@@ -388,6 +403,7 @@ expr()
 }
 
 /* combine eprime and tprime? */
+static
 ast_node *
 eprime(ast_node *prev_termn)
 {
@@ -420,6 +436,7 @@ eprime(ast_node *prev_termn)
 	return n;
 }
 
+static
 ast_node *
 astmt()
 {
@@ -435,6 +452,7 @@ astmt()
 	return n;
 }
 
+static
 ast_node *
 condexpr()
 {
@@ -442,11 +460,12 @@ condexpr()
 	return expr();
 }
 
-ast_node *ifstmt();
-ast_node *astmt();
-ast_node *wstmt();
-ast_node *fstmt();
+static ast_node *ifstmt();
+static ast_node *astmt();
+static ast_node *wstmt();
+static ast_node *fstmt();
 
+static
 ast_node *
 stmt()
 {
@@ -478,6 +497,7 @@ stmtlist()
 	return stmtlistn;	
 }
 
+static
 ast_node *
 ifstmt()
 {
@@ -494,6 +514,7 @@ ifstmt()
 	return n;
 }
 
+static
 ast_node *
 wstmt()
 {
@@ -510,6 +531,7 @@ wstmt()
 	return n;
 }
 
+static
 ast_node *
 fstmt()
 {

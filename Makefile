@@ -1,5 +1,5 @@
 OBJS = sfc.cpp codegen.cpp
-CC = gcc
+CC = g++
 CFLAGS = -O0 -g -std=c++14 -Wall -Wextra -Wfloat-equal -Wundef -Wshadow -Wpointer-arith -Wcast-align -Wstrict-overflow -Wwrite-strings
 LFLAGS = 
 OBJ_NAME = sfc

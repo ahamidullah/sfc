@@ -2,102 +2,100 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
+#include <functional>
 #include "ast.h"
 
-/*
-typedef enum instruction_op {
-	err_op = 0,
-	mov_op,
-	add_op,
-	sub_op,
-	imul_op,
-	idiv_op,
-} instruction_op;
-*/
-
-typedef enum operand_type {
+enum operand_type {
 	register_rnd,
 	memory_rnd,
 	constant_rnd,
 	none_rnd
-} operand_type;
+};
 
-typedef struct operand {
+struct operand {
 	/* just use a string? */
 	operand_type type;
 	int value;
-} operand;
+};
 
-typedef struct instruction {
+struct instruction {
 	const char *op;
 	operand o1;
 	operand o2;
-} instruction;
+};
 
-typedef struct operand_stack {
+struct operand_stack {
 	operand data[1024]; //temp
 	size_t size;
-} operand_stack;
+};
 
-typedef struct instruction_queue {
+struct instruction_queue {
 	instruction *data[1024]; //temp
 	size_t front;
 	size_t size;
-} instruction_queue;
+};
 
-typedef struct symbol {
+struct symbol {
 	const char *name;
 	int loc;
-} symbol;
+};
 
-typedef struct symbol_table {
+struct symbol_table {
 	symbol data[1024]; //temp
 	size_t size;
-} symbol_table;
+};
 
+static
 symbol *
-lookup(symbol_table *t, const char *name)
+lookup(const char *name, symbol_table *t)
 {
 	for (size_t i = 0; i < t->size; ++i) {
-		if (strcmp(name, t->data[i].name) == 1)
+		if (strcmp(name, t->data[i].name) == 0)
 			return &t->data[i];
 	}
 	return NULL;
 }
 
+static
 void
 add_symbol(symbol_table *t, const char *name, int loc)
 {
-	t->data[t->size++].name = name;
+	t->data[t->size].name = name;
 	t->data[t->size].loc = loc;
+	++t->size;
 }
 
-static void
+static
+void
 push_operand(operand target, operand_stack *stack)
 {
 	stack->data[stack->size++] = target;
 }
 
-static operand
+static
+operand
 pop_operand(operand_stack *stack)
 {
 	return stack->data[--stack->size];
 }
 
-static void
+static
+void
 queue_instruction(instruction *instr, instruction_queue *q)
 {
 	q->data[q->size++] = instr;
 	q->data[q->size] = NULL;
 }
 
-static instruction *
+static
+instruction *
 unqueue_instruction(instruction_queue *q)
 {
 	return q->data[q->front++];
 }
 
-static void
+static
+void
 add_instruction(const char *op, operand o1, operand o2, instruction_queue *instrs)
 {
 	instruction *ni = (instruction *)malloc(sizeof(instruction));
@@ -107,84 +105,112 @@ add_instruction(const char *op, operand o1, operand o2, instruction_queue *instr
 	queue_instruction(ni, instrs);
 }
 
-/*
-static instruction_op
-ast_op_to_instr_op(ast_terminal ast_op)
-{
-	switch(ast_op) {
-		case ast_add:
-			return add_op;
-		case ast_sub:
-			return sub_op;
-		case ast_mult:
-			return imul_op;
-		case ast_div:
-			return idiv_op;
-	}
-	return err_op;
-}
-*/
-
-static int
+static
+int
 get_virt_reg()
 {
 	static int reg_count = 0;
 	return reg_count++;
 }
 
-static void
-traverse_ast(ast_node *n, operand_stack *targets, symbol_table *symtab, instruction_queue *instrs)
+static
+operand_stack *
+make_stack()
 {
-	switch(n->type) {
-		case type_expr:
-		{
-			traverse_ast(n->expr.left, targets, symtab, instrs);
-			traverse_ast(n->expr.right, targets, symtab, instrs);
-			operand r_expr = pop_operand(targets);
-			operand l_expr = pop_operand(targets);
-			add_instruction(n->expr.op, l_expr, r_expr, instrs);
-			/* x86 stores result into first register */
-			push_operand(l_expr, targets);
-			return;
-		}
-		case type_astmt:
-		{
-			traverse_ast(n->astmt.lval, targets, symtab, instrs);
-			traverse_ast(n->astmt.rval, targets, symtab, instrs);
-			operand source = pop_operand(targets);
-			operand target = pop_operand(targets);
-			add_instruction("MOV", target, source, instrs);
-			push_operand(target, targets);
-			return;
-		}
-		case type_name:
-		{
-			operand target_reg = { register_rnd, get_virt_reg() };
-			/* just stick a one in there for now */
-			operand constant = { constant_rnd, 1 };
-			add_instruction("MOV", target_reg, constant, instrs);
-			push_operand(target_reg, targets);
-			return;
-		}
-		case type_stmtlist:
-		{
-			for (; n != END_STMT_LIST; n = n->stmtlist.next) {
-				traverse_ast(n->stmtlist.stmt, targets, symtab, instrs);
-			}
-			return;
-		}
-		case type_num:
-		{
-			operand target_reg = { register_rnd, get_virt_reg() };
-			operand constant = { constant_rnd, n->num };
-			add_instruction("MOV", target_reg, constant, instrs);
-			push_operand(target_reg, targets);
-			return;
-		}
-	}
+	operand_stack *os = (operand_stack *)malloc(sizeof(operand_stack));
+	os->size = 0;
+	return os;
 }
 
-static void
+static
+instruction_queue *
+make_queue()
+{
+	instruction_queue *iq = (instruction_queue *)malloc(sizeof(instruction_queue));
+	iq->size = 0;
+	iq->front = 0;
+	return iq;
+}
+
+static
+symbol_table *
+make_symtab()
+{
+	symbol_table *st = (symbol_table *)malloc(sizeof(symbol_table));
+	return st;
+}
+
+static
+instruction_queue *
+gen_virt_instrs(ast_node *ast)
+{
+	operand_stack      *targets  =  make_stack();
+	symbol_table       *symtab   =  make_symtab();
+	instruction_queue  *instrs   =  make_queue();
+
+	// c++ lambda nonesense. it ain't great...
+	std::function<void(ast_node *)> traverse_ast = [targets, symtab, instrs, &traverse_ast](ast_node *n) {
+		switch(n->type) {
+			case type_expr:
+			{
+				traverse_ast(n->expr.left);
+				traverse_ast(n->expr.right);
+				operand r_expr = pop_operand(targets);
+				operand l_expr = pop_operand(targets);
+				add_instruction(n->expr.op, l_expr, r_expr, instrs);
+				/* x86 stores result into first register */
+				push_operand(l_expr, targets);
+				return;
+			}
+			case type_astmt:
+			{
+				traverse_ast(n->astmt.lval);
+				traverse_ast(n->astmt.rval);
+				operand source = pop_operand(targets);
+				operand target = pop_operand(targets);
+				add_instruction("MOV", target, source, instrs);
+				push_operand(target, targets);
+				return;
+			}
+			case type_name:
+			{
+				symbol *s = lookup(n->name, symtab);
+				int target_reg = 0;
+				if (s) {
+					target_reg = s->loc;
+					printf("%s %d\n", s->name, s->loc);
+				} else {
+					target_reg = get_virt_reg();
+					add_symbol(symtab, n->name, target_reg);
+				}
+				push_operand({ register_rnd, target_reg }, targets);
+				return;
+			}
+			case type_stmtlist:
+			{
+				for (; n != END_STMT_LIST; n = n->stmtlist.next)
+					traverse_ast(n->stmtlist.stmt);
+				return;
+			}
+			case type_num:
+			{
+				operand target_reg = { register_rnd, get_virt_reg() };
+				operand constant = { constant_rnd, n->num };
+				add_instruction("MOV", target_reg, constant, instrs);
+				push_operand(target_reg, targets);
+				return;
+			}
+		}
+	};
+
+	traverse_ast(ast);
+	free(targets);
+	free(symtab);
+	return instrs;
+}
+
+static
+void
 print_instructions(instruction_queue *q)
 {
 	auto print_operand = [](operand o) {
@@ -202,29 +228,7 @@ print_instructions(instruction_queue *q)
 		}
 		printf("%d } ", o.value);
 	};
-	for (instruction *cur = unqueue_instruction(q); cur; cur = unqueue_instruction(q)) {
-		/*
-		switch (cur->op) {
-			case mov_op:
-				printf("MOV ");
-				break;
-			case add_op:
-				printf("ADD ");
-				break;
-			case sub_op:
-				printf("SUB ");
-				break;
-			case imul_op:
-				printf("MUL ");
-				break;
-			case idiv_op:
-				printf("DIV ");
-				break;
-			default:
-				printf("__ERROR__ ");
-				break;
-		}
-		*/
+	for (const instruction *cur = unqueue_instruction(q); cur; cur = unqueue_instruction(q)) {
 		printf("%s ", cur->op);
 		print_operand(cur->o1);
 		print_operand(cur->o2);
@@ -235,13 +239,9 @@ print_instructions(instruction_queue *q)
 void
 gencode(ast_node *ast)
 {
-	operand_stack targets;
-	targets.size = 0;
-	instruction_queue instrs;
-	instrs.size = 0;
-	instrs.front = 0;
-	symbol_table symtab;
-	traverse_ast(ast, &targets, &symtab, &instrs);
-	print_instructions(&instrs);
+	instruction_queue *instrs = gen_virt_instrs(ast);
+	print_instructions(instrs);
+	free(instrs);
 	return;
 }
+
