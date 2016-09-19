@@ -197,11 +197,6 @@ nexttok()
 	return;
 }
 
-#define debug_print(...)\
-{\
-	fprintf(stderr, __VA_ARGS__);\
-}
-
 #define printerr(...)\
 {\
 	fprintf(stderr, "\n");\
@@ -223,7 +218,6 @@ expected(const char *lhs)
 	abortc("Expected %s.", lhs);
 }
 
-/*BOILERPLATE*/
 static
 void
 expect(token_type expected_type)
@@ -265,14 +259,22 @@ expect(token_type expected_type)
 	}
 }
 
+static
+ast_node *
+create_node(ast_type t)
+{
+	ast_node *n = (ast_node *)malloc(sizeof(ast_node));
+	n->type = t;
+	return n;
+}
+
 static ast_node *eprime(ast_node *);
 
 static
 ast_node *
 num()
 {
-	ast_node *n = (ast_node *)malloc(sizeof(ast_node));
-	n->type = type_num;
+	ast_node *n = create_node(type_num);
 	n->num = atoi(lookstr);
 	expect(num_tk);
 	return n;
@@ -280,10 +282,9 @@ num()
 
 static
 ast_node *
-name()
+name(ast_type t) //get a generic name (could be type, var, function, etc.)
 {
-	ast_node *n = (ast_node *)malloc(sizeof(ast_node));
-	n->type = type_name;
+	ast_node *n = create_node(t);
 	n->name = (char *)malloc(strlen(lookstr)+1);
 	strcpy(n->name, lookstr);
 	expect(name_tk);
@@ -292,13 +293,20 @@ name()
 
 static ast_node * expr();
 
+//variable name occuring in an expression
 static
 ast_node *
-create_node(ast_type t)
+exprvar()
 {
-	ast_node *n = (ast_node *)malloc(sizeof(ast_node));
-	n->type = t;
-	return n;
+	return name(type_exprvar);
+}
+
+//variable name being assigned to
+static
+ast_node *
+asmtvar()
+{
+	return name(type_asmtvar);
 }
 
 static
@@ -315,7 +323,7 @@ factor()
 	} else if (look == num_tk)
 		return num();
 	else if (look == name_tk)
-		return name();
+		return exprvar();
 	return NULL;
 }
 
@@ -338,10 +346,10 @@ tprime(ast_node *prev_factorn)
 	n = create_node(type_expr);
 	if (look == mult_tk) {
 		nexttok();
-		n->expr.op = "MUL";
+		n->expr.op = "imul";
 	} else if (look == div_tk) {
 		nexttok();
-		n->expr.op = "DIV";
+		n->expr.op = "idiv";
 	} else {
 		expected("multiplication or division sign");
 	}
@@ -420,10 +428,10 @@ eprime(ast_node *prev_termn)
 	n = create_node(type_expr);
 	if (look == add_tk) {
 		nexttok();
-		n->expr.op = "ADD";
+		n->expr.op = "add";
 	} else if (look == sub_tk) {
 		nexttok();
-		n->expr.op = "SUB";
+		n->expr.op = "sub";
 	} else {
 		expected("plus or minus sign");
 	}
@@ -442,7 +450,7 @@ astmt()
 {
 	ast_node *n = create_node(type_astmt), *namen, *exprn;
 
-	if (!(namen = name()))
+	if (!(namen = asmtvar()))
 		return NULL;
 	n->astmt.lval = namen;
 	expect(asg_tk);
@@ -554,7 +562,7 @@ fstmt()
 	return n;
 }
 
-void gencode(ast_node *ast);
+void gen_code(ast_node *ast);
 
 int
 main(int argc, char **argv)
@@ -566,7 +574,7 @@ main(int argc, char **argv)
 	              | ifstmt
 	              | wstmt
 	              | fstmt
-	astmt      -> var := expr
+	astmt      -> lvar := expr
 	ifstmt     -> if (condexpr) { stmtlist }
 	wstmt      -> while (condexpr) { stmtlist }
 	fstmt      -> for (init; condexpr; onloop) { stmtlist }
@@ -585,7 +593,7 @@ main(int argc, char **argv)
 	              | eps
 	factor     -> ( expr )
 	              | num
-	              | name
+	              | rvar
 	*/
 	if (argc == 1)
 		abortc("no filename given");
@@ -596,7 +604,7 @@ main(int argc, char **argv)
 	nexttok();
 	ast_node *ast = stmtlist();
 	if (ast)
-		gencode(ast);
+		gen_code(ast);
 	else
 		printerr("ast err\n");
 	return 0;

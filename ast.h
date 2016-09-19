@@ -19,6 +19,8 @@ enum ast_type {
 	type_stmtlist,
 	type_wstmt,
 	type_fstmt,
+	type_asmtvar,
+	type_exprvar,
 };
 
 struct ast_expr {

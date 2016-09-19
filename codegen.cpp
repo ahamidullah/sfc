@@ -5,17 +5,59 @@
 #include <functional>
 #include "ast.h"
 
+#define printerr(...)\
+{\
+	fprintf(stderr, "\n");\
+	fprintf(stderr, "Error on line %d: ", __LINE__);\
+	fprintf(stderr, __VA_ARGS__);\
+	fprintf(stderr, "\n");\
+}
+
+#define abortc(...)\
+{\
+	printerr(__VA_ARGS__);\
+	fprintf(stderr, "Aborting...\n\n");\
+	exit(1);\
+}
+
+enum register_id {
+	eax_reg = 0, //general purpose regs
+	ebx_reg,
+	ecx_reg,
+	edx_reg,
+	num_gen_regs,
+	esp_reg, //special purpose regs
+};
+
+struct memory_table {
+	int is_reg_in_use[num_gen_regs];
+	size_t esp_offset;
+};
+
+static
+memory_table *
+make_memtab()
+{
+	memory_table *mt = (memory_table *)malloc(sizeof(memory_table));
+	memset(mt->is_reg_in_use, 0, num_gen_regs);
+	mt->esp_offset = 0;
+	return mt;
+}
+
 enum operand_type {
-	register_rnd,
+	register_rnd = 0,
 	memory_rnd,
 	constant_rnd,
 	none_rnd
 };
 
 struct operand {
-	/* just use a string? */
 	operand_type type;
-	int value;
+	union {
+		register_id reg;
+		size_t offset;
+		int constant;
+	};
 };
 
 struct instruction {
@@ -37,7 +79,7 @@ struct instruction_queue {
 
 struct symbol {
 	const char *name;
-	int loc;
+	size_t offset;
 };
 
 struct symbol_table {
@@ -58,10 +100,10 @@ lookup(const char *name, symbol_table *t)
 
 static
 void
-add_symbol(symbol_table *t, const char *name, int loc)
+add_symbol(symbol_table *t, const char *name, int offset)
 {
 	t->data[t->size].name = name;
-	t->data[t->size].loc = loc;
+	t->data[t->size].offset = offset;
 	++t->size;
 }
 
@@ -95,6 +137,27 @@ unqueue_instruction(instruction_queue *q)
 }
 
 static
+register_id
+get_reg(memory_table *mt)
+{
+	for (int i = 0; i < num_gen_regs; ++i) {
+		if (mt->is_reg_in_use[i] == 0) {
+			mt->is_reg_in_use[i] = 1;
+			return (register_id)i; //cast i to corresponding reg enum entry. kinda nasty
+		}
+	}
+	abortc("Ran out of registers. That shouldn't happen...");
+}
+
+static
+void
+reset_regs(memory_table *mt)
+{
+	for (int i = 0; i < num_gen_regs; ++i)
+		mt->is_reg_in_use[i] = 0;
+}
+
+static
 void
 add_instruction(const char *op, operand o1, operand o2, instruction_queue *instrs)
 {
@@ -106,11 +169,11 @@ add_instruction(const char *op, operand o1, operand o2, instruction_queue *instr
 }
 
 static
-int
-get_virt_reg()
+void
+add_instr_and_reset_regs(const char *op, operand o1, operand o2, instruction_queue *instrs, memory_table *mt)
 {
-	static int reg_count = 0;
-	return reg_count++;
+	add_instruction(op, o1, o2, instrs);
+	reset_regs(mt);
 }
 
 static
@@ -140,25 +203,65 @@ make_symtab()
 	return st;
 }
 
+//awful. hacky. c++ doesn't let you initialize union by field, need a better way (constructors?)
+static
+operand
+make_operand(operand_type type, int val)
+{
+	operand o;
+	o.type = type;
+	if (type != constant_rnd && type != none_rnd)
+		abortc("operand mismatch");
+	o.constant = val;
+	return o;
+}
+
+static
+operand
+make_operand(operand_type type, register_id val)
+{
+	operand o;
+	o.type = type;
+	if (type != register_rnd)
+		abortc("operand mismatch");
+	o.reg = val;
+	return o;
+}
+
+static
+operand
+make_operand(operand_type type, size_t val)
+{
+	operand o;
+	o.type = type;
+	if (type != memory_rnd)
+		abortc("operand mismatch");
+	o.offset = val;
+	return o;
+}
+
+static operand NONE_OPERAND = make_operand(none_rnd, 0); //for operations that accept fewer operands
+
 static
 instruction_queue *
-gen_virt_instrs(ast_node *ast)
+gen_asm(ast_node *ast)
 {
 	operand_stack      *targets  =  make_stack();
 	symbol_table       *symtab   =  make_symtab();
 	instruction_queue  *instrs   =  make_queue();
+	memory_table       *memtab   =  make_memtab();
 
-	// c++ lambda nonesense. it ain't great...
-	std::function<void(ast_node *)> traverse_ast = [targets, symtab, instrs, &traverse_ast](ast_node *n) {
-		switch(n->type) {
+	// c++ lambda nonsense. it ain't great...
+	std::function<void(ast_node *)> traverse_ast = [targets, symtab, instrs, memtab, &traverse_ast](ast_node *n) {
+		switch (n->type) {
 			case type_expr:
 			{
 				traverse_ast(n->expr.left);
 				traverse_ast(n->expr.right);
 				operand r_expr = pop_operand(targets);
 				operand l_expr = pop_operand(targets);
-				add_instruction(n->expr.op, l_expr, r_expr, instrs);
-				/* x86 stores result into first register */
+				add_instr_and_reset_regs(n->expr.op, l_expr, r_expr, instrs, memtab);
+				//x86 stores result into first register
 				push_operand(l_expr, targets);
 				return;
 			}
@@ -166,24 +269,37 @@ gen_virt_instrs(ast_node *ast)
 			{
 				traverse_ast(n->astmt.lval);
 				traverse_ast(n->astmt.rval);
-				operand source = pop_operand(targets);
-				operand target = pop_operand(targets);
-				add_instruction("MOV", target, source, instrs);
-				push_operand(target, targets);
+				operand expr = pop_operand(targets);
+				operand var = pop_operand(targets);
+				//todo: check if new var and push it directly rather than pushing a zero
+				add_instr_and_reset_regs("movl", expr, var, instrs, memtab);
+				//push_operand(var, targets);
 				return;
 			}
-			case type_name:
+			case type_exprvar: //var in an expr, load into a register (target)
 			{
 				symbol *s = lookup(n->name, symtab);
-				int target_reg = 0;
-				if (s) {
-					target_reg = s->loc;
-					printf("%s %d\n", s->name, s->loc);
-				} else {
-					target_reg = get_virt_reg();
-					add_symbol(symtab, n->name, target_reg);
+				if (!s)
+					abortc("%s undefined", s->name);
+				operand reg = make_operand(register_rnd, get_reg(memtab));
+				add_instruction("movl", make_operand(memory_rnd, s->offset), reg, instrs);
+				push_operand(reg, targets);
+				return;
+			}
+			case type_asmtvar: //var being assigned to, memory is target
+			{
+				symbol *s = lookup(n->name, symtab);
+				operand mem;
+				if (s)
+					mem = make_operand(memory_rnd, s->offset);
+				else { //new var
+					//just to make space
+					add_instruction("pushl", make_operand(constant_rnd, 0), NONE_OPERAND, instrs);
+					memtab->esp_offset += 4;
+					mem = make_operand(memory_rnd, memtab->esp_offset);
+					add_symbol(symtab, n->name, mem.offset);
 				}
-				push_operand({ register_rnd, target_reg }, targets);
+				push_operand(mem, targets);
 				return;
 			}
 			case type_stmtlist:
@@ -194,10 +310,10 @@ gen_virt_instrs(ast_node *ast)
 			}
 			case type_num:
 			{
-				operand target_reg = { register_rnd, get_virt_reg() };
-				operand constant = { constant_rnd, n->num };
-				add_instruction("MOV", target_reg, constant, instrs);
-				push_operand(target_reg, targets);
+				operand reg = make_operand(register_rnd, get_reg(memtab));
+				operand val = make_operand(constant_rnd, n->num);
+				add_instruction("movl", val, reg, instrs);
+				push_operand(reg, targets);
 				return;
 			}
 		}
@@ -206,6 +322,7 @@ gen_virt_instrs(ast_node *ast)
 	traverse_ast(ast);
 	free(targets);
 	free(symtab);
+	free(memtab);
 	return instrs;
 }
 
@@ -214,19 +331,25 @@ void
 print_instructions(instruction_queue *q)
 {
 	auto print_operand = [](operand o) {
-		printf("{ ");
 		switch (o.type) {
 			case register_rnd:
-				printf("REG ");
+				printf("{ REG ");
+				printf("%d } ", (int)o.reg);
 				break;
 			case constant_rnd:
-				printf("CONST ");
+				printf("{ CONST ");
+				printf("%d } ", o.constant);
+				break;
+			case memory_rnd:
+				printf("{ MEM ");
+				printf("%lu } ", o.offset);
+				break;
+			case none_rnd:
 				break;
 			default:
 				printf("??? ");
 				break;
 		}
-		printf("%d } ", o.value);
 	};
 	for (const instruction *cur = unqueue_instruction(q); cur; cur = unqueue_instruction(q)) {
 		printf("%s ", cur->op);
@@ -237,9 +360,9 @@ print_instructions(instruction_queue *q)
 }
 
 void
-gencode(ast_node *ast)
+gen_code(ast_node *ast)
 {
-	instruction_queue *instrs = gen_virt_instrs(ast);
+	instruction_queue *instrs = gen_asm(ast);
 	print_instructions(instrs);
 	free(instrs);
 	return;
